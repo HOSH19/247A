@@ -281,23 +281,27 @@ class TDSConvEncoder(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    """Sinusoidal positional encoding for transformer inputs."""
+    """Sinusoidal positional encoding for transformer inputs. Computes encoding
+    on-the-fly to support variable sequence lengths (e.g. full sessions at test)."""
 
-    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1) -> None:
+    def __init__(self, d_model: int, dropout: float = 0.1) -> None:
         super().__init__()
+        self.d_model = d_model
         self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
             torch.arange(0, d_model, 2).float() * (-torch.log(torch.tensor(10000.0)) / d_model)
         )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe.unsqueeze(1))  # (max_len, 1, d_model)
+        self.register_buffer("div_term", div_term)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (T, N, d_model)
-        x = x + self.pe[: x.size(0)]
+        T = x.size(0)
+        device = x.device
+        position = torch.arange(T, dtype=torch.float, device=device).unsqueeze(1)
+        pe = torch.zeros(T, self.d_model, device=device)
+        pe[:, 0::2] = torch.sin(position * self.div_term)
+        pe[:, 1::2] = torch.cos(position * self.div_term)
+        x = x + pe.unsqueeze(1)  # (T, 1, d_model) broadcasts to (T, N, d_model)
         return self.dropout(x)
 
 
