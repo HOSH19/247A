@@ -278,3 +278,21 @@ class TDSConvEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
+
+
+class LSTMEncoder(nn.Module):
+    def __init__(self, num_features, hidden_size, num_layers, dropout):
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_size=num_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bidirectional=True,
+            dropout=dropout,
+            batch_first=False,  # TNC format
+        )
+        self.fc = nn.Linear(hidden_size * 2, num_features)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        x, _ = self.lstm(inputs)  # (T, N, hidden_size * 2)
+        return self.fc(x)         # (T, N, num_features)
