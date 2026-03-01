@@ -243,15 +243,17 @@ Per project requirements, we investigate how data characteristics affect CER usi
 python -m emg2qwerty.train model=lstm_ctc module.in_features=<N*33> trainer.max_epochs=40
 ```
 
-**Results:** (in progress)
+**Results:**
 
 | Channels per band | in_features | Val CER (ep40) |
 |---|---|---|
-| 16 (full) | 528 | — |
-| 8 | 264 | — |
-| 4 | 132 | — |
-| 2 | 66 | — |
-| 1 | 33 | — |
+| 16 (full) | 528 | 19.87 |
+| 8 | 264 | 25.88 |
+| 4 | 132 | 36.53 |
+| 2 | 66 | 66.59 |
+| 1 | 33 | 88.04 |
+
+**Insight:** Performance degrades monotonically and steeply as channels are reduced. CER roughly doubles going from 16→8→4 channels. At 2ch and 1ch the model barely learns (66–88 CER), suggesting individual channels carry highly non-redundant information. All 16 channels are needed for competitive performance — each electrode captures spatially distinct muscle activation patterns that the model relies on.
 
 ---
 
