@@ -22,6 +22,7 @@ from emg2qwerty.charset import charset
 from emg2qwerty.data import LabelData, WindowedEMGDataset
 from emg2qwerty.metrics import CharacterErrorRates
 from emg2qwerty.modules import (
+    ChannelSlice,
     LSTMEncoder,
     MultiBandRotationInvariantMLP,
     SpectrogramNorm,
@@ -400,7 +401,7 @@ class TDSConvLSTMCTCModule(pl.LightningModule):
 
 class LSTMCTCModule(pl.LightningModule):
     NUM_BANDS: ClassVar[int] = 2
-    ELECTRODE_CHANNELS: ClassVar[int] = 16
+    FREQ_BINS: ClassVar[int] = 33  # n_fft // 2 + 1, with n_fft=64
 
     def __init__(
         self,
@@ -416,13 +417,16 @@ class LSTMCTCModule(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        num_channels = in_features // self.FREQ_BINS  # e.g. 528//33=16, 264//33=8
         num_features = self.NUM_BANDS * mlp_features[-1]
 
         # Model
-        # inputs: (T, N, bands=2, electrode_channels=16, freq)
+        # inputs: (T, N, bands=2, electrode_channels=16, freq=33)
         self.model = nn.Sequential(
-            # (T, N, bands=2, C=16, freq)
-            SpectrogramNorm(channels=self.NUM_BANDS * self.ELECTRODE_CHANNELS),
+            # Select first num_channels channels (no-op when num_channels=16)
+            ChannelSlice(num_channels),
+            # (T, N, bands=2, num_channels, freq)
+            SpectrogramNorm(channels=self.NUM_BANDS * num_channels),
             # (T, N, bands=2, mlp_features[-1])
             MultiBandRotationInvariantMLP(
                 in_features=in_features,

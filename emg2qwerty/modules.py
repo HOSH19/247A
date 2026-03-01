@@ -280,6 +280,22 @@ class TDSConvEncoder(nn.Module):
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
 
 
+class ChannelSlice(nn.Module):
+    """Selects the first ``num_channels`` electrode channels from each band.
+
+    Inputs must be of shape (T, N, num_bands, electrode_channels, freq).
+    Used for channel ablation studies.
+    """
+
+    def __init__(self, num_channels: int) -> None:
+        super().__init__()
+        self.num_channels = num_channels
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (T, N, bands, channels, freq)
+        return x[:, :, :, : self.num_channels, :]
+
+
 class LSTMEncoder(nn.Module):
     def __init__(self, num_features, hidden_size, num_layers, dropout):
         super().__init__()

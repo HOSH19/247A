@@ -214,7 +214,7 @@ Flatten → LSTMEncoder(h=384, l=2) → TransformerEncoder(layers=2, nhead=8, ff
 ```
 No positional encoding added — LSTM output already encodes position implicitly via recurrent state.
 
-**Screening (40 epochs):** val CER 19.03 — worse than BiLSTM alone (ep40 ≈ 22.53 baseline... wait, screening BiLSTM ep40 was 22.53). Transformer model slower to converge at ep40.
+**Screening (40 epochs):** val CER 19.03 — Transformer model is slower to converge than pure BiLSTM at ep40.
 
 **Full run (150 epochs):** val CER **14.67**, test CER **17.25** — essentially identical to pure BiLSTM (14.55).
 
@@ -226,13 +226,47 @@ Consistent with Exp 3 finding: the bottleneck is data, not architecture complexi
 
 ---
 
+---
+
+## Data Ablation Studies
+
+Per project requirements, we investigate how data characteristics affect CER using BiLSTM (h=384, l=2) as the fixed architecture.
+
+### Experiment 5: Electrode Channel Ablation
+
+**Motivation:** The model uses 16 electrode channels per band (2 bands = 32 total). How many channels are actually needed? Fewer channels = simpler hardware requirements, but too few may lose discriminative EMG features.
+
+**Implementation:** Added `ChannelSlice` module to `modules.py` — selects first N channels per band as a first layer in the model Sequential. Controlled via `module.in_features` override (`in_features = num_channels × 33`).
+
+```bash
+# channels: 16→8→4→2→1, all at 40 epochs
+python -m emg2qwerty.train model=lstm_ctc module.in_features=<N*33> trainer.max_epochs=40
+```
+
+**Results:** (in progress)
+
+| Channels per band | in_features | Val CER (ep40) |
+|---|---|---|
+| 16 (full) | 528 | — |
+| 8 | 264 | — |
+| 4 | 132 | — |
+| 2 | 66 | — |
+| 1 | 33 | — |
+
+---
+
 ## Next Experiments
 
-**Running theme:** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to the same ~14.5–15.9 val CER. BiLSTM h=384, l=2 seems to be the practical ceiling for this single-user dataset.
+**Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset.
 
-### Priority 1: Conformer encoder
+**Remaining required items:**
+- ⬜ Exp 6: Training data amount vs CER
+- ⬜ Exp 7: Sampling rate vs CER
+- ⬜ Data augmentation techniques
 
-**Rationale:** Unlike the additive approaches tried so far, Conformer tightly integrates conv and attention within each block (conv → attention → conv), which may provide a qualitatively different inductive bias. Also the established SOTA for speech, which shares many properties with EMG (continuous, temporal, speaker/user-specific).
+### Conformer encoder (optional)
+
+**Rationale:** Unlike the additive approaches tried so far, Conformer tightly integrates conv and attention within each block, which may provide a qualitatively different inductive bias. Given our data-bottleneck findings, improvements are uncertain.
 
 ```bash
 # to be implemented: ConformerCTCModule + config/model/conformer_ctc.yaml
