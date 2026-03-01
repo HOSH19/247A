@@ -149,10 +149,12 @@ pip install -e .
 
 | Model | Val CER | Test CER | Epochs | Log |
 |-------|---------|----------|--------|-----|
-| TDSConv (baseline) | **18.94** | — | 150 | logs/2026-02-27/16-29-13 |
-| BiLSTM (h=384, l=2) | **14.55** | — | 150 | logs/2026-02-28/00-52-40 |
+| TDSConv (baseline) | **18.94** | **22.17** | 150 | logs/2026-02-27/16-29-13 |
+| BiLSTM (h=384, l=2) | **14.55** | **15.76** | 150 | logs/2026-02-28/00-52-40 |
 | TDS+BiLSTM | **14.58** | **15.47** | 150 (warm init ep38) | logs/2026-02-28/08-08-49 |
 | BiLSTM (h=512, l=3) | **15.91** | **22.80** | 150 (best ep135) | logs/2026-02-28/23-09-02 |
+| BiLSTM + Transformer (screening) | 19.03 | — | 40 | logs/2026-03-01/06-31-09 |
+| BiLSTM + Transformer | **14.67** | **17.25** | 150 (best ep129) | logs/2026-03-01/08-19-50 |
 
 ### Experiment 1: BiLSTM vs TDSConv
 
@@ -202,22 +204,36 @@ Factorial showed positive interaction effect — scaling both together yielded b
 
 ---
 
+### Experiment 4: BiLSTM + Self-Attention (Transformer layers)
+
+**Motivation:** BiLSTM processes sequences recurrently — good at local sequential patterns but may struggle with direct long-range dependencies (information must flow step-by-step through hidden states). Stacking Transformer encoder layers on top lets the model directly attend to any pair of timesteps. Hypothesis: attention over LSTM representations improves recognition of keystroke patterns that share context across distant time steps.
+
+**Architecture:**
+```
+Flatten → LSTMEncoder(h=384, l=2) → TransformerEncoder(layers=2, nhead=8, ffn=3072) → Linear
+```
+No positional encoding added — LSTM output already encodes position implicitly via recurrent state.
+
+**Screening (40 epochs):** val CER 19.03 — worse than BiLSTM alone (ep40 ≈ 22.53 baseline... wait, screening BiLSTM ep40 was 22.53). Transformer model slower to converge at ep40.
+
+**Full run (150 epochs):** val CER **14.67**, test CER **17.25** — essentially identical to pure BiLSTM (14.55).
+
+**Insight:** Adding self-attention on top of BiLSTM converges to the same performance as BiLSTM alone, but slower. Two interpretations:
+1. BiLSTM's bidirectional hidden states already capture sufficient cross-timestep context — the attention layers have nothing new to add
+2. The dataset is too small to train the extra attention parameters meaningfully; the model converges to the same solution with more parameters but no gain
+
+Consistent with Exp 3 finding: the bottleneck is data, not architecture complexity.
+
+---
+
 ## Next Experiments
 
-BiLSTM h=384, l=2 is the confirmed best config. Scaling capacity hurts. The question is whether architectural inductive bias (not raw size) can help.
+**Running theme:** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to the same ~14.5–15.9 val CER. BiLSTM h=384, l=2 seems to be the practical ceiling for this single-user dataset.
 
 ### Priority 1: Conformer encoder
 
-**Rationale:** Speech recognition SOTA. Combines depthwise conv (local, ~ms scale) + multi-head self-attention (global, full sequence) in a single tightly integrated block. Adds a different *kind* of capacity (attention) rather than just more parameters — may generalize better than the larger BiLSTM did.
+**Rationale:** Unlike the additive approaches tried so far, Conformer tightly integrates conv and attention within each block (conv → attention → conv), which may provide a qualitatively different inductive bias. Also the established SOTA for speech, which shares many properties with EMG (continuous, temporal, speaker/user-specific).
 
 ```bash
 # to be implemented: ConformerCTCModule + config/model/conformer_ctc.yaml
-```
-
-### Priority 2: Self-attention on top of BiLSTM
-
-**Rationale:** Lighter-weight alternative to full Conformer. A few transformer encoder layers on top of BiLSTM h=384, l=2 to add cross-timestep attention without a full rewrite.
-
-```bash
-# to be implemented: LSTMTransformerCTCModule
 ```
