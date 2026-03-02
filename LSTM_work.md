@@ -281,13 +281,38 @@ python -m emg2qwerty.train model=lstm_ctc user=single_user_Nses trainer.max_epoc
 
 ---
 
+### Experiment 7: Sampling Rate (hop_length) Ablation
+
+**Motivation:** The baseline uses `hop_length=16` which downsamples 2kHz EMG to 125 spectrogram frames/sec. Is this the right temporal resolution? Higher resolution captures finer temporal detail but creates longer sequences; lower resolution compresses time but may lose discriminative features.
+
+**Implementation:** Created 4 transform configs (`log_spectrogram_hop{8,16,32,64}.yaml`) varying only `hop_length`. `n_fft=64` and `in_features=528` unchanged.
+
+```bash
+python -m emg2qwerty.train model=lstm_ctc transforms=log_spectrogram_hop32 trainer.max_epochs=40
+```
+
+| hop_length | Effective rate | Best Val CER (ep40) |
+|---|---|---|
+| 8 | 250 Hz | 26.47 |
+| 16 | 125 Hz (baseline) | 19.87 |
+| 32 | 62.5 Hz | **17.50** |
+| 64 | 31.25 Hz | 17.68 |
+
+**Insight:** Counterintuitively, lower temporal resolution (hop=32/64) outperforms the baseline (hop=16). Two likely reasons:
+1. **Shorter sequences for BiLSTM**: hop=32 produces half as many frames → gradients flow more easily through the recurrent network, reducing vanishing gradient issues
+2. **Noise reduction**: fine-grained temporal detail at 125Hz may introduce more noise than signal — EMG keystroke patterns operate on ~50–200ms timescales, so 62.5Hz (hop=32) provides sufficient resolution
+
+hop=8 (250Hz) is the worst — longer sequences hurt BiLSTM, and the extra temporal detail adds noise. The sweet spot appears around 62.5Hz.
+
+---
+
 ## Next Experiments
 
 **Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset.
 
 **Remaining required items:**
 - ✅ Exp 6: Training data amount vs CER
-- ⬜ Exp 7: Sampling rate vs CER
+- ✅ Exp 7: Sampling rate vs CER
 - ⬜ Data augmentation techniques
 
 ### Conformer encoder (optional)
