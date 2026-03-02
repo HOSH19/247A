@@ -257,12 +257,36 @@ python -m emg2qwerty.train model=lstm_ctc module.in_features=<N*33> trainer.max_
 
 ---
 
+### Experiment 6: Training Data Amount Ablation
+
+**Motivation:** The single-user dataset has 16 training sessions. How much data is actually needed? Fewer sessions = understanding the minimum data requirement for useful EMG decoding.
+
+**Implementation:** Created `config/user/single_user_{2,4,8}ses.yaml` configs with subsets of training sessions. Val/test sessions kept identical across all runs.
+
+```bash
+# 2/4/8/16 sessions, all at 40 epochs
+python -m emg2qwerty.train model=lstm_ctc user=single_user_Nses trainer.max_epochs=40
+```
+
+**Results:**
+
+| Train sessions | Fraction | Best Val CER (ep40) |
+|---|---|---|
+| 2 | 12.5% | ~100 (fails to learn) |
+| 4 | 25% | ~100 (fails to learn) |
+| 8 | 50% | 36.97 |
+| 16 (full) | 100% | **19.87** |
+
+**Insight:** There is a sharp threshold between 4 and 8 sessions — below 8 sessions, the model completely fails to generalize (overfits to training data immediately, val CER stays ~100). With 8 sessions the model learns something (36.97) but is significantly worse than full data (19.87). All 16 sessions are needed to reach competitive performance. This strongly confirms the data-bottleneck hypothesis from the architecture experiments — there is simply not enough data to support model capacity or generalization with fewer sessions.
+
+---
+
 ## Next Experiments
 
 **Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset.
 
 **Remaining required items:**
-- ⬜ Exp 6: Training data amount vs CER
+- ✅ Exp 6: Training data amount vs CER
 - ⬜ Exp 7: Sampling rate vs CER
 - ⬜ Data augmentation techniques
 
