@@ -1,172 +1,101 @@
 # LSTM Implementation Work Log
 
 ## Goal
-Replace the TDSConvEncoder in the baseline pipeline with a BiLSTM encoder
-to compare performance (CER) against the TDS CNN baseline (~30 val CER).
+
+Replace the TDSConvEncoder in the baseline pipeline with a BiLSTM encoder and systematically study the effect of architecture, preprocessing, and data characteristics on CER.
+
+```
+SpectrogramNorm → MultiBandRotationInvariantMLP → Flatten → [Encoder] → Linear → LogSoftmax → CTCLoss
+```
+
+MLP and CTC decoder kept identical to TDSConv baseline. Only the encoder and preprocessing are varied.
 
 ---
 
-## Files Modified / Created
+## Overall Results Summary
 
-### 1. `emg2qwerty/modules.py` — `LSTMEncoder` class added
+### Architecture Experiments (150 epochs, hop=16 baseline preprocessing)
 
-```python
-class LSTMEncoder(nn.Module):
-    def __init__(self, num_features, hidden_size, num_layers, dropout):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=num_features,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            bidirectional=True,
-            dropout=dropout,
-            batch_first=False,  # TNC format
-        )
-        self.fc = nn.Linear(hidden_size * 2, num_features)
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        x, _ = self.lstm(inputs)  # (T, N, hidden_size * 2)
-        return self.fc(x)         # (T, N, num_features)
-```
-
-- Bidirectional LSTM: captures both past and future context
-- `fc` layer projects back to `num_features` (768) to keep output shape consistent with TDS baseline
-- `batch_first=False`: preserves TNC format used throughout the codebase
-
-### 2. `emg2qwerty/lightning.py` — `LSTMCTCModule` class added
-
-- Added `LSTMEncoder` to imports
-- Added `LSTMCTCModule(pl.LightningModule)` — mirrors `TDSConvCTCModule` exactly,
-  with `TDSConvEncoder` replaced by `LSTMEncoder`
-- New `__init__` params: `hidden_size`, `num_layers`, `dropout`
-- `_step` logic is identical to `TDSConvCTCModule`
-  (T_diff handles temporal length difference, though LSTM preserves T so T_diff=0)
-
-### 3. `config/model/lstm_ctc.yaml` — new config file created
-
-```yaml
-# @package _global_
-module:
-  _target_: emg2qwerty.lightning.LSTMCTCModule
-  in_features: 528
-  mlp_features: [384]
-  hidden_size: 384
-  num_layers: 2
-  dropout: 0.1
-
-datamodule:
-  _target_: emg2qwerty.lightning.WindowedEMGDataModule
-  window_length: 8000
-  padding: [1800, 200]
-```
-
-### 4. `.github/workflows/testing.yml` — CI trigger changed
-
-```yaml
-# Before
-on: [push]
-
-# After
-on:
-  push:
-    branches: [main]
-```
-
-CI only runs on `main` branch pushes — no more failure emails on experiment branches.
-
----
-
-## Model Architecture (LSTM)
-
-```
-Input: (T, N, 2, 16, 33)
-  → SpectrogramNorm(32)
-  → MultiBandRotationInvariantMLP(in=528, out=384) per band
-  → Flatten  →  (T, N, 768)
-  → LSTMEncoder(num_features=768, hidden_size=384, num_layers=2, dropout=0.1)
-      BiLSTM: (T, N, 768) → (T, N, 768)   [384*2=768, projected back via fc]
-  → Linear(768 → num_classes)
-  → LogSoftmax
-```
-
----
-
-## Training Command
-
-```bash
-python -m emg2qwerty.train model=lstm_ctc
-```
-
-Overriding hyperparameters example:
-```bash
-python -m emg2qwerty.train model=lstm_ctc module.hidden_size=512 module.num_layers=3
-```
-
----
-
-## Environment Setup
-
-### VM Setup Steps
-
-```bash
-# 1. Clone repo & download data
-git clone -b han/LSTM --single-branch https://github.com/HOSH19/247A.git
-gsutil -m cp -r gs://ec247a-emg2qwerty-data/data/ ~/247A/
-
-# 2. Create and activate venv
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 3. Install system dependencies required to build kenlm
-sudo apt-get install -y cmake build-essential python3.10-dev
-
-# 4. Install Python packages
-pip install -r requirements.txt
-pip install -e .
-```
-
-### Known Issues
-
-- Running `pip install --upgrade pip wheel setuptools` upgrades setuptools to 82.x,
-  which drops `pkg_resources`, causing `pytorch-lightning` import to fail with
-  `ModuleNotFoundError: No module named 'pkg_resources'`
-- Fix: `pip install setuptools==69.5.1` (pin to version specified in requirements.txt)
-
----
-
-## Baseline Comparison
-
-| Model | Encoder | Temporal context | Val CER | Epochs | Log |
-|-------|---------|-----------------|---------|--------|-----|
-| TDSConv (baseline) | TDS CNN (4 blocks, kernel=32) | Fixed 124 samples (~62ms) | **18.94** | 150 (full) | logs/2026-02-27/16-29-13 |
-| BiLSTM (ours) | Bidirectional LSTM | Full sequence | **14.55** | 150 (full) | logs/2026-02-28/00-52-40 |
-
----
-
-## Experiment Summary
-
-### Results
-
-| Model | Val CER | Test CER | Epochs | Log |
-|-------|---------|----------|--------|-----|
-| TDSConv (baseline) | **18.94** | **22.17** | 150 | logs/2026-02-27/16-29-13 |
+| Model | Val CER | Test CER | Epochs | Notes |
+|-------|---------|----------|--------|-------|
+| TDSConv (baseline) | 18.94 | 22.17 | 150 | logs/2026-02-27/16-29-13 |
 | BiLSTM (h=384, l=2) | **14.55** | **15.76** | 150 | logs/2026-02-28/00-52-40 |
-| TDS+BiLSTM | **14.58** | **15.47** | 150 (warm init ep38) | logs/2026-02-28/08-08-49 |
-| BiLSTM (h=512, l=3) | **15.91** | **22.80** | 150 (best ep135) | logs/2026-02-28/23-09-02 |
-| BiLSTM + Transformer (screening) | 19.03 | — | 40 | logs/2026-03-01/06-31-09 |
-| BiLSTM + Transformer | **14.67** | **17.25** | 150 (best ep129) | logs/2026-03-01/08-19-50 |
+| TDS+BiLSTM hybrid | 14.58 | 15.47 | 150 | warm init ep38 |
+| BiLSTM (h=512, l=3) | 15.91 | 22.80 | 150 | best ep135 |
+| BiLSTM + Transformer | 14.67 | 17.25 | 150 | best ep129 |
+
+### Preprocessing: Sampling Rate (40 epochs, BiLSTM h=384 l=2)
+
+| hop_length | Effective rate | Val CER | Test CER |
+|-----------|----------------|---------|----------|
+| 8 | 250 Hz | 26.47 | 25.14 |
+| 16 | 125 Hz (baseline) | 19.87 | 20.08 |
+| 24 | 83 Hz | 18.76 | 18.50 |
+| 32 | 62.5 Hz | 17.50 | 16.99 |
+| 40 | 50 Hz | 18.17 | 18.31 |
+| **48** | **41.7 Hz** | **17.01** | **17.59** |
+| 56 | 35.7 Hz | 17.92 | 18.22 |
+| 64 | 31.25 Hz | 17.68 | 17.53 |
+
+### Best Config Full Run (150 epochs, BiLSTM h=384 l=2, hop=48)
+
+| Model | Val CER | Test CER | Epochs |
+|-------|---------|----------|--------|
+| BiLSTM hop=16 (baseline) | 14.55 | 15.76 | 150 |
+| **BiLSTM hop=48** | **13.98** | **14.52** | **150** |
+
+### Preprocessing: Data Augmentation (40 epochs, BiLSTM h=384 l=2, hop=16)
+
+| Augmentation | Val CER | Test CER |
+|---|---|---|
+| Baseline (none extra) | 19.87 | 20.08 |
+| + GaussianNoise (std=0.1) | 20.16 | 20.34 |
+| + AmplitudeScale (×0.7~1.3) | 21.02 | 21.98 |
+
+### Data Ablation: Electrode Channels (40 epochs)
+
+| Channels per band | Val CER |
+|---|---|
+| 16 (full) | 19.87 |
+| 8 | 25.88 |
+| 4 | 36.53 |
+| 2 | 66.59 |
+| 1 | 88.04 |
+
+### Data Ablation: Training Sessions (40 epochs)
+
+| Train sessions | Fraction | Val CER |
+|---|---|---|
+| 2 | 12.5% | ~100 (fails) |
+| 4 | 25% | ~100 (fails) |
+| 8 | 50% | 36.97 |
+| 16 (full) | 100% | **19.87** |
+
+---
+
+## Part 1: Architecture Experiments
 
 ### Experiment 1: BiLSTM vs TDSConv
 
 **Motivation:** TDSConv only sees a fixed 62ms local window per step. EMG keystroke patterns require longer temporal context — a full-sequence model should do better.
 
-**Result:** BiLSTM (14.55) significantly outperforms TDSConv (18.94), **−4.39 CER**.
+**Architecture:**
+```
+Input: (T, N, 2, 16, 33)
+  → SpectrogramNorm(32)
+  → MultiBandRotationInvariantMLP(in=528, out=384) per band
+  → Flatten → (T, N, 768)
+  → LSTMEncoder(num_features=768, hidden_size=384, num_layers=2, dropout=0.1)
+  → Linear(768 → num_classes) → LogSoftmax
+```
+
+**Result:** BiLSTM (14.55) significantly outperforms TDSConv (18.94), **−4.39 val CER**.
 
 **Insight:** Full-sequence bidirectional context is clearly beneficial for this task. The fixed receptive field of TDS is a real bottleneck.
 
 ---
 
-### Experiment 2: TDS Conv → BiLSTM Hybrid
+### Experiment 2: TDS+BiLSTM Hybrid
 
 **Motivation:** Stack TDS (local feature extraction) before BiLSTM (global context), expecting each to handle what the other cannot.
 
@@ -177,185 +106,170 @@ Flatten → TDSConvEncoder(kernel=32) → LSTMEncoder(hidden=384, layers=2) → 
 
 **Result:** TDS+BiLSTM (14.58) ≈ BiLSTM (14.55), **no meaningful improvement**.
 
-**Insight:** Two interpretations:
-1. BiLSTM already captures local patterns through its recurrent connections — TDS preprocessing is redundant
-2. TDS's temporal reduction (T → T−124) may slightly hurt by discarding edge context that BiLSTM would otherwise use
-
-Either way, simply prepending TDS to BiLSTM is not a useful direction.
+**Insight:** BiLSTM already captures local patterns through its recurrent connections — TDS preprocessing is redundant. TDS's temporal reduction (T → T−124) may also slightly hurt by discarding edge context.
 
 ---
 
 ### Experiment 3: Scale up BiLSTM
 
-**Rationale:** Current config (hidden=384, layers=2) may be underpowered. Before moving to more complex architectures, check if raw capacity is the bottleneck.
+**Motivation:** Check if raw model capacity is the bottleneck.
 
-**2x2 Factorial experiment @ 40 epochs** (baseline ep40 = 22.53):
+**2×2 Factorial @ 40 epochs:**
 
 | | layers=2 | layers=3 |
 |---|---|---|
-| **hidden=384** | 22.53 (baseline) | 20.87 |
-| **hidden=512** | 19.74 | **17.88** |
+| **hidden=384** | 22.53 / — | 20.87 / 24.08 |
+| **hidden=512** | 19.74 / 19.69 | **17.88 / 21.55** |
 
-Factorial showed positive interaction effect — scaling both together yielded best 40-epoch result (17.88). Ran full 150-epoch run with hidden=512, layers=3.
+*(val CER / test CER)*
 
-**Result: val CER 15.91 — worse than h=384, l=2 (14.55). Scaling up hurts.**
+Factorial showed positive interaction — scaling both yields best 40-epoch result. Full 150-epoch run with h=512, l=3:
 
-**Insight:** The larger model overfits on the single-user dataset. h=384, l=2 is already near the capacity sweet spot for this data size. Raw model capacity is not the bottleneck — the data regime is.
+**Result: val CER 15.91, test CER 22.80 — worse than h=384, l=2 (14.55) at 150ep.**
+
+**Insight:** Larger model overfits on single-user data. h=384, l=2 is near the capacity sweet spot. The bottleneck is data, not model capacity.
 
 ---
 
-### Experiment 4: BiLSTM + Self-Attention (Transformer layers)
+### Experiment 4: BiLSTM + Self-Attention (Transformer)
 
-**Motivation:** BiLSTM processes sequences recurrently — good at local sequential patterns but may struggle with direct long-range dependencies (information must flow step-by-step through hidden states). Stacking Transformer encoder layers on top lets the model directly attend to any pair of timesteps. Hypothesis: attention over LSTM representations improves recognition of keystroke patterns that share context across distant time steps.
+**Motivation:** BiLSTM may struggle with direct long-range dependencies. Stacking Transformer layers on top lets the model directly attend to any pair of timesteps.
 
 **Architecture:**
 ```
 Flatten → LSTMEncoder(h=384, l=2) → TransformerEncoder(layers=2, nhead=8, ffn=3072) → Linear
 ```
-No positional encoding added — LSTM output already encodes position implicitly via recurrent state.
+No positional encoding — LSTM output already encodes position implicitly.
 
-**Screening (40 epochs):** val CER 19.03 — Transformer model is slower to converge than pure BiLSTM at ep40.
+**Screening (40 epochs):** val CER 19.03 — slower to converge than pure BiLSTM.
 
 **Full run (150 epochs):** val CER **14.67**, test CER **17.25** — essentially identical to pure BiLSTM (14.55).
 
-**Insight:** Adding self-attention on top of BiLSTM converges to the same performance as BiLSTM alone, but slower. Two interpretations:
-1. BiLSTM's bidirectional hidden states already capture sufficient cross-timestep context — the attention layers have nothing new to add
-2. The dataset is too small to train the extra attention parameters meaningfully; the model converges to the same solution with more parameters but no gain
-
-Consistent with Exp 3 finding: the bottleneck is data, not architecture complexity.
+**Insight:** BiLSTM's bidirectional hidden states already capture sufficient context. Extra attention parameters don't help on small single-user data. Consistent with data-bottleneck finding.
 
 ---
 
----
+## Part 2: Preprocessing Ablation
 
-## Data Ablation Studies
+### Experiment 5: Sampling Rate (hop_length)
 
-Per project requirements, we investigate how data characteristics affect CER using BiLSTM (h=384, l=2) as the fixed architecture.
+**Motivation:** The baseline uses `hop_length=16` (2kHz → 125 frames/sec). Is this the right temporal resolution?
 
-### Experiment 5: Electrode Channel Ablation
+**Implementation:** Created transform configs `log_spectrogram_hop{8,16,24,32,40,48,56,64}.yaml` varying only `hop_length`. `n_fft=64` and `in_features=528` unchanged.
 
-**Motivation:** The model uses 16 electrode channels per band (2 bands = 32 total). How many channels are actually needed? Fewer channels = simpler hardware requirements, but too few may lose discriminative EMG features.
+**Results:** See summary table above. Sweet spot is **hop=48 (41.7 Hz)**.
 
-**Implementation:** Added `ChannelSlice` module to `modules.py` — selects first N channels per band as a first layer in the model Sequential. Controlled via `module.in_features` override (`in_features = num_channels × 33`).
+**Insight:** Lower temporal resolution (hop=32~64) outperforms baseline (hop=16). Two reasons:
+1. **Shorter sequences**: fewer frames → better BiLSTM gradient flow
+2. **Noise reduction**: EMG keystroke patterns operate on ~50–200ms timescales — 125Hz captures temporal detail that is mostly noise
 
-```bash
-# channels: 16→8→4→2→1, all at 40 epochs
-python -m emg2qwerty.train model=lstm_ctc module.in_features=<N*33> trainer.max_epochs=40
-```
+hop=8 (250Hz) is worst — longer sequences hurt, extra detail adds noise.
 
-**Results:**
-
-| Channels per band | in_features | Val CER (ep40) |
-|---|---|---|
-| 16 (full) | 528 | 19.87 |
-| 8 | 264 | 25.88 |
-| 4 | 132 | 36.53 |
-| 2 | 66 | 66.59 |
-| 1 | 33 | 88.04 |
-
-**Insight:** Performance degrades monotonically and steeply as channels are reduced. CER roughly doubles going from 16→8→4 channels. At 2ch and 1ch the model barely learns (66–88 CER), suggesting individual channels carry highly non-redundant information. All 16 channels are needed for competitive performance — each electrode captures spatially distinct muscle activation patterns that the model relies on.
+**Full run at hop=48 (150 epochs): val CER 13.98, test CER 14.52 — new best overall.**
 
 ---
 
-### Experiment 6: Training Data Amount Ablation
+### Experiment 6: Data Augmentation
 
-**Motivation:** The single-user dataset has 16 training sessions. How much data is actually needed? Fewer sessions = understanding the minimum data requirement for useful EMG decoding.
-
-**Implementation:** Created `config/user/single_user_{2,4,8}ses.yaml` configs with subsets of training sessions. Val/test sessions kept identical across all runs.
-
-```bash
-# 2/4/8/16 sessions, all at 40 epochs
-python -m emg2qwerty.train model=lstm_ctc user=single_user_Nses trainer.max_epochs=40
-```
-
-**Results:**
-
-| Train sessions | Fraction | Best Val CER (ep40) |
-|---|---|---|
-| 2 | 12.5% | ~100 (fails to learn) |
-| 4 | 25% | ~100 (fails to learn) |
-| 8 | 50% | 36.97 |
-| 16 (full) | 100% | **19.87** |
-
-**Insight:** There is a sharp threshold between 4 and 8 sessions — below 8 sessions, the model completely fails to generalize (overfits to training data immediately, val CER stays ~100). With 8 sessions the model learns something (36.97) but is significantly worse than full data (19.87). All 16 sessions are needed to reach competitive performance. This strongly confirms the data-bottleneck hypothesis from the architecture experiments — there is simply not enough data to support model capacity or generalization with fewer sessions.
-
----
-
-### Experiment 7: Sampling Rate (hop_length) Ablation
-
-**Motivation:** The baseline uses `hop_length=16` which downsamples 2kHz EMG to 125 spectrogram frames/sec. Is this the right temporal resolution? Higher resolution captures finer temporal detail but creates longer sequences; lower resolution compresses time but may lose discriminative features.
-
-**Implementation:** Created 4 transform configs (`log_spectrogram_hop{8,16,32,64}.yaml`) varying only `hop_length`. `n_fft=64` and `in_features=528` unchanged.
-
-```bash
-python -m emg2qwerty.train model=lstm_ctc transforms=log_spectrogram_hop32 trainer.max_epochs=40
-```
-
-| hop_length | Effective rate | Best Val CER (ep40) |
-|---|---|---|
-| 8 | 250 Hz | 26.47 |
-| 16 | 125 Hz (baseline) | 19.87 |
-| 32 | 62.5 Hz | **17.50** |
-| 64 | 31.25 Hz | 17.68 |
-
-**Insight:** Counterintuitively, lower temporal resolution (hop=32/64) outperforms the baseline (hop=16). Two likely reasons:
-1. **Shorter sequences for BiLSTM**: hop=32 produces half as many frames → gradients flow more easily through the recurrent network, reducing vanishing gradient issues
-2. **Noise reduction**: fine-grained temporal detail at 125Hz may introduce more noise than signal — EMG keystroke patterns operate on ~50–200ms timescales, so 62.5Hz (hop=32) provides sufficient resolution
-
-hop=8 (250Hz) is the worst — longer sequences hurt BiLSTM, and the extra temporal detail adds noise. The sweet spot appears around 62.5Hz.
-
----
-
-### Experiment 8: Data Augmentation
-
-**Motivation:** The single-user dataset is small and the model overfits. Standard augmentation techniques may improve generalization by making training examples more diverse.
+**Motivation:** The single-user dataset is small and the model overfits. Test whether additional augmentation improves generalization.
 
 **Implementation:** Added two new transform classes to `transforms.py`:
-- `GaussianNoise(std=0.1)` — applied after LogSpectrogram, perturbs log-spectrogram values
-- `AmplitudeScale(min=0.7, max=1.3)` — applied before LogSpectrogram, scales raw EMG amplitude
+- `GaussianNoise(std=0.1)` — applied after LogSpectrogram
+- `AmplitudeScale(min=0.7, max=1.3)` — applied before LogSpectrogram (raw EMG)
 
-Created `config/transforms/log_spectrogram_{gaussian,amplitude}.yaml`, each adding one augmentation on top of the baseline transforms (RandomBandRotation + TemporalJitter + SpecAugment).
+**Results:** See summary table above. Both slightly hurt performance.
 
-**Results:**
-
-| Augmentation | Best Val CER (ep40) |
-|---|---|
-| Baseline (no extra aug) | 19.87 |
-| + GaussianNoise (std=0.1) | 20.16 |
-| + AmplitudeScale (×0.7~1.3) | 21.02 |
-
-**Insight:** Both augmentations slightly hurt performance at 40 epochs. The baseline already has substantial augmentation (RandomBandRotation + TemporalJitter + SpecAugment) — adding more regularization slows convergence without improving generalization on this small single-user dataset.
+**Insight:** The baseline already has substantial augmentation (RandomBandRotation + TemporalAlignmentJitter + SpecAugment). Adding more regularization slows convergence without improving generalization on this small dataset.
 
 ---
 
-### Experiment 9: BiLSTM + hop=48 Full Run
+## Part 3: Data Ablation
 
-**Motivation:** hop=48 (41.7Hz) was the best at 40 epochs (17.01 val CER). Running 150 epochs to see if the gain over baseline (hop=16, 14.55) holds at convergence.
+### Experiment 7: Electrode Channel Ablation
 
-**Result:** Val CER **13.98**, Test CER **14.52** — new best across all experiments.
+**Motivation:** The model uses 16 electrode channels per band. How many are actually needed?
 
-| Model | Val CER | Test CER | Epochs |
-|---|---|---|---|
-| BiLSTM hop=16 (baseline) | 14.55 | 15.76 | 150 |
-| **BiLSTM hop=48** | **13.98** | **14.52** | **150** |
+**Implementation:** Added `ChannelSlice` module to `modules.py` — selects first N channels per band. Controlled via `module.in_features` override (`in_features = num_channels × 33`).
 
-**Insight:** hop=48 (41.7Hz effective rate) consistently outperforms the baseline hop=16 (125Hz) at both 40 and 150 epochs. Reducing temporal resolution improves BiLSTM by shortening sequences (better gradient flow) and filtering high-frequency noise irrelevant to keystroke patterns.
+**Results:** See summary table above.
+
+**Insight:** Performance degrades monotonically and steeply as channels are reduced. CER roughly doubles each time channels are halved (16→8→4). At 2ch/1ch the model barely learns. All 16 channels carry spatially distinct, non-redundant EMG information.
 
 ---
 
-## Next Experiments
+### Experiment 8: Training Data Amount
 
-**Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset. Exception: hop=48 preprocessing change pushed val CER to 13.98 — a new best.
+**Motivation:** How many training sessions are actually needed?
 
-**Remaining required items:**
-- ✅ Exp 6: Training data amount vs CER
-- ✅ Exp 7: Sampling rate vs CER
-- ✅ Exp 8: Data augmentation techniques
+**Implementation:** Created `config/user/single_user_{2,4,8}ses.yaml` configs with session subsets. Val/test sessions identical across all runs.
 
-### Conformer encoder (optional)
+**Results:** See summary table above.
 
-**Rationale:** Unlike the additive approaches tried so far, Conformer tightly integrates conv and attention within each block, which may provide a qualitatively different inductive bias. Given our data-bottleneck findings, improvements are uncertain.
+**Insight:** Sharp threshold between 4 and 8 sessions — below 8, the model completely fails to generalize (immediate overfitting, val CER ~100). All 16 sessions are needed for competitive performance. Strongly confirms the data-bottleneck hypothesis.
+
+---
+
+## Implementation Details
+
+### Key Files
+
+| File | Description |
+|------|-------------|
+| `emg2qwerty/modules.py` | `LSTMEncoder`, `ChannelSlice` classes |
+| `emg2qwerty/lightning.py` | `LSTMCTCModule`, `LSTMTransformerCTCModule` |
+| `config/model/lstm_ctc.yaml` | BiLSTM config (h=384, l=2) |
+| `config/model/lstm_transformer_ctc.yaml` | BiLSTM + Transformer config |
+| `config/transforms/log_spectrogram_hop*.yaml` | Sampling rate variants |
+| `config/user/single_user_*ses.yaml` | Data amount variants |
+
+### Training Commands
 
 ```bash
-# to be implemented: ConformerCTCModule + config/model/conformer_ctc.yaml
+# BiLSTM baseline
+python -m emg2qwerty.train model=lstm_ctc
+
+# BiLSTM with hop=48 (best config)
+python -m emg2qwerty.train model=lstm_ctc transforms=log_spectrogram_hop48
+
+# Channel ablation (e.g. 8ch)
+python -m emg2qwerty.train model=lstm_ctc module.in_features=264
+
+# Data amount ablation (e.g. 8 sessions)
+python -m emg2qwerty.train model=lstm_ctc user=single_user_8ses
+
+# Screening run (40 epochs)
+python -m emg2qwerty.train model=lstm_ctc trainer.max_epochs=40
+```
+
+### Model Architecture
+
+```
+Input: (T, N, bands=2, channels=16, freq=33)
+  → ChannelSlice(num_channels)          # channel ablation layer
+  → SpectrogramNorm(bands × channels)
+  → MultiBandRotationInvariantMLP(in=528, out=[384]) per band
+  → Flatten → (T, N, 768)
+  → LSTMEncoder(num_features=768, hidden_size=384, num_layers=2)
+      BiLSTM: (T, N, 768) → (T, N, 768)
+  → Linear(768 → num_classes)
+  → LogSoftmax → CTCLoss
+```
+
+---
+
+## Environment Setup
+
+```bash
+source .venv/bin/activate
+# If pkg_resources error: pip install setuptools==69.5.1
+```
+
+### VM Setup Steps
+
+```bash
+git clone -b han/LSTM --single-branch https://github.com/HOSH19/247A.git
+gsutil -m cp -r gs://ec247a-emg2qwerty-data/data/ ~/247A/
+python3 -m venv .venv && source .venv/bin/activate
+sudo apt-get install -y cmake build-essential python3.10-dev
+pip install -r requirements.txt && pip install -e .
 ```
