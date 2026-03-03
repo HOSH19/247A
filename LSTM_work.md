@@ -16,48 +16,107 @@ MLP and CTC decoder kept identical to TDSConv baseline. Only the encoder and pre
 
 Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation.
 
-### 150 Epoch Full Runs
+### Full Results Table
 
 | Model | Total Params | Val CER | Test CER | Epochs | Notes |
 |-------|-------------|---------|----------|--------|-------|
+| TDSConv (baseline) | 5.3M | 22.55 | 24.18 | 40 | |
 | TDSConv (baseline) | 5.3M | 18.94 | 22.17 | 150 | logs/2026-02-27/16-29-13 |
+| BiLSTM (h=384, l=2) | 8.2M | 19.87 | 20.08 | 40 | |
+| BiLSTM (h=384, l=3) | 11.7M | 20.87 | 24.08 | 40 | |
+| BiLSTM (h=512, l=2) | 12.8M | 19.74 | 19.69 | 40 | |
+| BiLSTM (h=512, l=3) | 19.1M | **17.88** | 21.55 | 40 | |
+| TDS+BiLSTM hybrid | 13.0M | — | — | 40 | (no 40ep run) |
+| BiLSTM + Transformer | 22.3M | 19.03 | 26.56 | 40 | screening |
 | BiLSTM (h=384, l=2) | 8.2M | **14.55** | **15.76** | 150 | logs/2026-02-28/00-52-40 |
-| TDS+BiLSTM hybrid | 13.0M | 14.58 | 15.47 | 150 | warm init ep38 |
 | BiLSTM (h=512, l=3) | 19.1M | 15.91 | 22.80 | 150 | best ep135 |
+| TDS+BiLSTM hybrid | 13.0M | 14.58 | 15.47 | 150 | warm init from TDSConv ep38 |
 | BiLSTM + Transformer | 22.3M | 14.67 | 17.25 | 150 | best ep129 |
 
-### 40 Epoch Screening (Architecture / Scale)
+---
 
-| Model | Total Params | Val CER | Test CER | Epochs |
-|-------|-------------|---------|----------|--------|
-| TDSConv | 5.3M | 22.55 | 24.18 | 40 |
-| BiLSTM (h=384, l=2) | 8.2M | 19.87 | 20.08 | 40 |
-| BiLSTM (h=384, l=3) | 11.7M | 20.87 | 24.08 | 40 |
-| BiLSTM (h=512, l=2) | 12.8M | 19.74 | 19.69 | 40 |
-| BiLSTM (h=512, l=3) | 19.1M | **17.88** | 21.55 | 40 |
-| BiLSTM + Transformer (screening) | 22.3M | 19.03 | 26.56 | 40 |
+### Experiment 1: BiLSTM vs TDSConv
 
-### Experiment Notes
+**Motivation:** TDSConv uses fixed-width convolutional kernels — each output frame can only see a local 62ms window (kernel=32, hop=2). EMG keystroke patterns involve muscle activations that span variable timescales and benefit from knowing both past and future context. A bidirectional recurrent model sees the entire sequence and can model these long-range dependencies directly.
 
-**Exp 1 — BiLSTM vs TDSConv:**
-TDSConv sees only a fixed 62ms local window. BiLSTM (14.55) outperforms TDSConv (18.94) by **−4.39 val CER**. Full-sequence bidirectional context is clearly beneficial.
+**Result:** BiLSTM (val 14.55) outperforms TDSConv (18.94) by **−4.39 val CER** at 150 epochs.
 
-**Exp 2 — TDS+BiLSTM Hybrid:**
-Stacking TDSConv (local) before BiLSTM (global) gives no improvement (14.58 ≈ 14.55). BiLSTM already captures local patterns recurrently; TDS preprocessing is redundant.
+**Insight:** The improvement is large and consistent. Full-sequence bidirectional context is clearly beneficial for EMG keystroke decoding. TDS's fixed local receptive field is a genuine architectural bottleneck for this task.
 
-**Exp 3 — Scale up BiLSTM:**
-2×2 factorial (h×l) at 40 epochs: h=512, l=3 best at 40ep (17.88). Full 150ep run gives 15.91 — *worse* than h=384, l=2 (14.55). Larger model overfits on single-user data. Data, not capacity, is the bottleneck.
+---
 
-**Exp 4 — BiLSTM + Transformer:**
-Self-attention on top of BiLSTM converges to same performance (14.67 ≈ 14.55) but slower. BiLSTM bidirectional states already capture sufficient context. Extra parameters don't help on small datasets.
+### Experiment 2: TDS+BiLSTM Hybrid
+
+**Motivation:** TDS and BiLSTM should be complementary — TDS extracts local frequency-temporal features efficiently, while BiLSTM models global sequence context. Stacking them might give the best of both.
+
+**Architecture:**
+```
+Flatten → TDSConvEncoder(kernel=32) → LSTMEncoder(h=384, l=2) → Linear
+```
+Warm-initialized from a pre-trained TDSConv checkpoint (ep38) to preserve local feature representations.
+
+**Result:** TDS+BiLSTM (14.58) ≈ pure BiLSTM (14.55). **No meaningful improvement.**
+
+**Insight:** Two interpretations:
+1. BiLSTM already learns local temporal patterns through its recurrent connections — TDS preprocessing is redundant
+2. TDS's temporal reduction (T → T−124) discards a small amount of edge context that BiLSTM would otherwise use
+
+Either way, simply prepending TDS to BiLSTM is not a useful direction. The hybrid model adds 4.8M params for zero gain.
+
+---
+
+### Experiment 3: Scale up BiLSTM
+
+**Motivation:** The baseline h=384, l=2 config may simply be underpowered. Before exploring architectural variants, check whether raw capacity is the bottleneck by running a 2×2 factorial over hidden size and depth.
+
+**2×2 Factorial @ 40 epochs:**
+
+| | l=2 | l=3 |
+|---|---|---|
+| **h=384** | 19.87 / 20.08 | 20.87 / 24.08 |
+| **h=512** | 19.74 / 19.69 | **17.88 / 21.55** |
+
+*(val CER / test CER)*
+
+Positive interaction effect observed — scaling both h and l together yields the best 40-epoch result (17.88). Ran full 150-epoch run with h=512, l=3.
+
+**Result: val CER 15.91, test CER 22.80 — worse than h=384, l=2 (14.55/15.76) at 150 epochs.**
+
+**Insight:** The larger model overfits on the single-user dataset. Despite a promising 40-epoch screening result, the capacity gains don't hold at convergence. h=384, l=2 is already near the sweet spot for this data regime. **The bottleneck is data size, not model capacity.**
+
+---
+
+### Experiment 4: BiLSTM + Self-Attention (Transformer)
+
+**Motivation:** BiLSTM processes sequences step-by-step — information about distant timesteps must propagate through intermediate hidden states. Transformer self-attention allows direct pairwise comparison of any two frames, which could help the model recognize keystroke patterns that share long-range context (e.g., co-articulation between adjacent keystrokes).
+
+**Architecture:**
+```
+Flatten → LSTMEncoder(h=384, l=2) → TransformerEncoder(layers=2, nhead=8, ffn=3072) → Linear
+```
+No positional encoding — LSTM output already encodes position implicitly via recurrent state.
+
+**Screening (40 epochs):** val CER 19.03 — slower to converge than pure BiLSTM (19.87 at ep40).
+
+**Full run (150 epochs):** val CER **14.67**, test CER **17.25** — essentially identical to pure BiLSTM (14.55/15.76).
+
+**Insight:** Adding self-attention on top of BiLSTM converges to the same solution but slower, and with worse test CER (17.25 vs 15.76). Two interpretations:
+1. BiLSTM's bidirectional hidden states already capture sufficient cross-timestep context — attention has nothing new to add
+2. The extra 14M parameters (22.3M vs 8.2M) overfit on the small single-user dataset
+
+Consistent with Exp 3: the data regime limits what any architectural addition can achieve.
 
 ---
 
 ## Part 2: Preprocessing Ablation
 
-Fixed: BiLSTM h=384, l=2 (8.2M params), 16ch, 16 sessions.
+Fixed: BiLSTM h=384, l=2 (8.2M), 16ch, 16 sessions.
 
-### Sampling Rate (hop_length) — 40 Epochs
+### Experiment 5: Sampling Rate (hop_length)
+
+**Motivation:** The baseline uses `hop_length=16`, downsampling the 2kHz EMG signal to 125 spectrogram frames/sec. This choice was inherited from the original codebase without ablation. Higher temporal resolution preserves more detail but creates longer sequences; lower resolution may discard useful information but could be easier for BiLSTM to model. Worth exploring whether 125Hz is actually optimal.
+
+**Implementation:** Created `config/transforms/log_spectrogram_hop{N}.yaml` for N ∈ {8, 16, 24, 32, 40, 48, 56, 64}. `n_fft=64` and `in_features=528` unchanged — only temporal resolution varies.
 
 | hop_length | Effective Rate | Val CER | Test CER |
 |-----------|----------------|---------|----------|
@@ -70,53 +129,75 @@ Fixed: BiLSTM h=384, l=2 (8.2M params), 16ch, 16 sessions.
 | 56 | 35.7 Hz | 17.92 | 18.22 |
 | 64 | 31.25 Hz | 17.68 | 17.53 |
 
-**hop=48 Full Run (150 epochs):**
+**Full run at hop=48 (150 epochs):**
 
 | Model | Total Params | Val CER | Test CER | Epochs |
 |-------|-------------|---------|----------|--------|
 | BiLSTM hop=16 (baseline) | 8.2M | 14.55 | 15.76 | 150 |
 | **BiLSTM hop=48** | **8.2M** | **13.98** | **14.52** | **150** |
 
-**Insight:** Lower temporal resolution (hop=32~64) outperforms baseline (hop=16). Shorter sequences improve BiLSTM gradient flow, and EMG keystroke patterns (~50–200ms) don't require 125Hz resolution. hop=48 (41.7Hz) is the sweet spot.
+**Insight:** Counterintuitively, lower temporal resolution (hop=32~64) consistently outperforms the baseline (hop=16). Two reasons:
+1. **Shorter sequences**: hop=48 produces 3× fewer frames per window → better gradient flow through BiLSTM, less vanishing gradient
+2. **Noise reduction**: EMG keystroke patterns operate on ~50–200ms timescales — 41.7Hz is more than sufficient resolution, while 125Hz likely captures inter-frame noise
 
-### Data Augmentation — 40 Epochs (hop=16)
+hop=8 (250Hz) is clearly worst: longest sequences + most noise. The sweet spot is **hop=48 (41.7Hz)**, confirmed at both 40ep and 150ep.
 
-| Augmentation | Val CER | Test CER |
-|---|---|---|
-| Baseline (RandomBandRot + TemporalJitter + SpecAugment) | 19.87 | 20.08 |
-| + GaussianNoise (std=0.1, post-spectrogram) | 20.16 | 20.34 |
-| + AmplitudeScale (×0.7~1.3, pre-spectrogram) | 21.02 | 21.98 |
+---
 
-**Insight:** Both augmentations slightly hurt. The baseline already has three augmentation layers — adding more regularization slows convergence without generalization gain on this small dataset.
+### Experiment 6: Data Augmentation
+
+**Motivation:** With only 16 training sessions for one user, overfitting is a real concern. Standard augmentation techniques may improve generalization by diversifying training examples. The baseline already uses RandomBandRotation, TemporalAlignmentJitter, and SpecAugment — but these are EMG-specific. Testing whether general signal augmentations (noise, amplitude variation) provide additional benefit.
+
+**Implementation:** Added two new classes to `transforms.py`:
+- `GaussianNoise(std=0.1)` — adds Gaussian noise to log-spectrogram values (post-spectrogram)
+- `AmplitudeScale(min=0.7, max=1.3)` — randomly scales raw EMG amplitude before spectrogram (simulates inter-session muscle activation variability)
+
+| Augmentation | Total Params | Val CER | Test CER |
+|---|---|---|---|
+| Baseline (RandBandRot + TempJitter + SpecAugment) | 8.2M | 19.87 | 20.08 |
+| + GaussianNoise (std=0.1) | 8.2M | 20.16 | 20.34 |
+| + AmplitudeScale (×0.7~1.3) | 8.2M | 21.02 | 21.98 |
+
+**Insight:** Both augmentations slightly hurt at 40 epochs. The baseline pipeline already contains three augmentation stages — adding more regularization slows convergence on this small dataset without improving generalization. The existing SpecAugment (time + freq masking) combined with band rotation appears to be sufficient for this data regime.
 
 ---
 
 ## Part 3: Data Ablation
 
-Fixed: BiLSTM h=384, l=2 (8.2M params), hop=16, 40 epochs.
+Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
-### Electrode Channels per Band
+### Experiment 7: Electrode Channel Ablation
 
-| Channels | in_features | Val CER | Test CER |
-|----------|------------|---------|----------|
-| 16 (full) | 528 | 19.87 | 20.08 |
-| 8 | 264 | 25.88 | 26.35 |
-| 4 | 132 | 36.53 | 37.97 |
-| 2 | 66 | 66.59 | 67.80 |
-| 1 | 33 | 88.04 | 86.90 |
+**Motivation:** The device uses 16 electrode channels per band (32 total). Fewer channels = simpler, cheaper hardware. Understanding how many channels are actually necessary could inform future hardware design. Hypothesis: nearby electrodes may capture redundant signals, so some reduction should be tolerable.
 
-**Insight:** Monotonic steep degradation as channels decrease. CER roughly doubles every halving. Each electrode captures spatially distinct, non-redundant muscle activation patterns — all 16 channels are necessary.
+**Implementation:** Added `ChannelSlice` module to `modules.py` — selects first N channels per band as the first layer. Controlled via `module.in_features` override (`in_features = num_channels × 33`).
 
-### Training Sessions
+| Channels per band | in_features | Total Params | Val CER | Test CER |
+|---|---|---|---|---|
+| 16 (full) | 528 | 8.2M | 19.87 | 20.08 |
+| 8 | 264 | 8.2M | 25.88 | 26.35 |
+| 4 | 132 | 8.2M | 36.53 | 37.97 |
+| 2 | 66 | 8.2M | 66.59 | 67.80 |
+| 1 | 33 | 8.2M | 88.04 | 86.90 |
 
-| Train sessions | Fraction | Val CER | Test CER |
-|---|---|---|---|
-| 2 | 12.5% | ~100 (fails) | ~100 |
-| 4 | 25% | ~100 (fails) | ~100 |
-| 8 | 50% | 36.97 | 33.46 |
-| 16 (full) | 100% | **19.87** | **20.08** |
+**Insight:** Performance degrades monotonically and steeply — CER roughly doubles with every halving of channels. The hypothesis that nearby electrodes are redundant is clearly wrong: each electrode captures spatially distinct muscle activation patterns that the model relies on non-redundantly. At 2ch/1ch the model barely learns at all, suggesting that even a small number of channels is insufficient to discriminate between finger movements. All 16 channels are needed for competitive performance.
 
-**Insight:** Sharp threshold between 4 and 8 sessions. Below 8, model immediately overfits (val CER ~100). All 16 sessions needed for competitive performance. Strongly confirms data-bottleneck hypothesis from architecture experiments.
+---
+
+### Experiment 8: Training Data Amount
+
+**Motivation:** The single-user dataset has 16 training sessions (collected across multiple days). Collecting many sessions is expensive and time-consuming — if the model works well with fewer sessions, data collection burden is reduced. Also directly tests the data-bottleneck hypothesis: if less data dramatically hurts performance, then architecture improvements are fundamentally limited by data size.
+
+**Implementation:** Created `config/user/single_user_{2,4,8}ses.yaml` configs with subsets of the 16 training sessions (first N sessions in chronological order). Val/test sessions kept identical across all runs.
+
+| Train sessions | Fraction | Total Params | Val CER | Test CER |
+|---|---|---|---|---|
+| 2 | 12.5% | 8.2M | ~100 (fails) | ~100 |
+| 4 | 25% | 8.2M | ~100 (fails) | ~100 |
+| 8 | 50% | 8.2M | 36.97 | 33.46 |
+| 16 (full) | 100% | 8.2M | **19.87** | **20.08** |
+
+**Insight:** There is a sharp threshold between 4 and 8 sessions. Below 8 sessions, the model immediately overfits — training loss decreases while val CER stays at ~100, meaning it memorizes training data without any generalization. With 8 sessions the model learns something useful (36.97) but is far from the full-data result (19.87). All 16 sessions are needed for competitive performance. This **strongly confirms the data-bottleneck hypothesis** from the architecture experiments: the fundamental limit is not model architecture but available training data.
 
 ---
 
