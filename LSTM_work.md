@@ -306,14 +306,51 @@ hop=8 (250Hz) is the worst — longer sequences hurt BiLSTM, and the extra tempo
 
 ---
 
+### Experiment 8: Data Augmentation
+
+**Motivation:** The single-user dataset is small and the model overfits. Standard augmentation techniques may improve generalization by making training examples more diverse.
+
+**Implementation:** Added two new transform classes to `transforms.py`:
+- `GaussianNoise(std=0.1)` — applied after LogSpectrogram, perturbs log-spectrogram values
+- `AmplitudeScale(min=0.7, max=1.3)` — applied before LogSpectrogram, scales raw EMG amplitude
+
+Created `config/transforms/log_spectrogram_{gaussian,amplitude}.yaml`, each adding one augmentation on top of the baseline transforms (RandomBandRotation + TemporalJitter + SpecAugment).
+
+**Results:**
+
+| Augmentation | Best Val CER (ep40) |
+|---|---|
+| Baseline (no extra aug) | 19.87 |
+| + GaussianNoise (std=0.1) | 20.16 |
+| + AmplitudeScale (×0.7~1.3) | 21.02 |
+
+**Insight:** Both augmentations slightly hurt performance at 40 epochs. The baseline already has substantial augmentation (RandomBandRotation + TemporalJitter + SpecAugment) — adding more regularization slows convergence without improving generalization on this small single-user dataset.
+
+---
+
+### Experiment 9: BiLSTM + hop=48 Full Run
+
+**Motivation:** hop=48 (41.7Hz) was the best at 40 epochs (17.01 val CER). Running 150 epochs to see if the gain over baseline (hop=16, 14.55) holds at convergence.
+
+**Result:** Val CER **13.98**, Test CER **14.52** — new best across all experiments.
+
+| Model | Val CER | Test CER | Epochs |
+|---|---|---|---|
+| BiLSTM hop=16 (baseline) | 14.55 | 15.76 | 150 |
+| **BiLSTM hop=48** | **13.98** | **14.52** | **150** |
+
+**Insight:** hop=48 (41.7Hz effective rate) consistently outperforms the baseline hop=16 (125Hz) at both 40 and 150 epochs. Reducing temporal resolution improves BiLSTM by shortening sequences (better gradient flow) and filtering high-frequency noise irrelevant to keystroke patterns.
+
+---
+
 ## Next Experiments
 
-**Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset.
+**Running theme (architecture):** Every attempt to add capacity (larger BiLSTM, TDS prepend, Transformer layers) converges to ~14.5–15.9 val CER. BiLSTM h=384, l=2 is the practical ceiling for this single-user dataset. Exception: hop=48 preprocessing change pushed val CER to 13.98 — a new best.
 
 **Remaining required items:**
 - ✅ Exp 6: Training data amount vs CER
 - ✅ Exp 7: Sampling rate vs CER
-- ⬜ Data augmentation techniques
+- ✅ Exp 8: Data augmentation techniques
 
 ### Conformer encoder (optional)
 

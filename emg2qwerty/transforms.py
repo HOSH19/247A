@@ -190,6 +190,43 @@ class LogSpectrogram:
 
 
 @dataclass
+class GaussianNoise:
+    """Adds Gaussian noise to a spectrogram tensor.
+
+    Applied after LogSpectrogram. Helps prevent overfitting by perturbing
+    the log-spectrogram values.
+
+    Args:
+        std (float): Standard deviation of the Gaussian noise. (default: 0.1)
+    """
+
+    std: float = 0.1
+
+    def __call__(self, specgram: torch.Tensor) -> torch.Tensor:
+        return specgram + torch.randn_like(specgram) * self.std
+
+
+@dataclass
+class AmplitudeScale:
+    """Randomly scales the amplitude of the raw EMG signal.
+
+    Applied before LogSpectrogram on the raw (T, bands, channels) tensor.
+    Simulates inter-session variability in muscle activation strength.
+
+    Args:
+        min_scale (float): Minimum scale factor. (default: 0.7)
+        max_scale (float): Maximum scale factor. (default: 1.3)
+    """
+
+    min_scale: float = 0.7
+    max_scale: float = 1.3
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        scale = np.random.uniform(self.min_scale, self.max_scale)
+        return tensor * scale
+
+
+@dataclass
 class SpecAugment:
     """Applies time and frequency masking as per the paper
     "SpecAugment: A Simple Data Augmentation Method for Automatic Speech
