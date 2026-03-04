@@ -41,7 +41,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiLSTM pad=[900,100] hop=48 | 8.2M | 15.77 | 16.06 | 40 | padding ablation |
 | BiLSTM pad=[3600,400] hop=48 | 8.2M | 17.39 | 17.22 | 40 | padding ablation |
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **15.13** | 16.27 | 40 | best combo |
-| BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | — | — | 150 | in progress |
+| BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **13.65** | **14.93** | 150 | best config full run |
 
 ---
 
@@ -190,7 +190,7 @@ ConvBlock: LayerNorm → DepthwiseConv1d(k=31, groups=C) → GELU → PointwiseC
 | **16000** | **[900, 100]** | **15.13** | **16.27** |
 | 16000 | [3600, 400] | 16.08 | 17.25 |
 
-**Best: win=16000, pad=[900,100] → val 15.13 @ 40ep. Full 150ep run in progress.**
+**Best: win=16000, pad=[900,100] → val 15.13 @ 40ep → val 13.65, test 14.93 @ 150ep (best ep120).**
 
 **Insight:**
 - **Larger window consistently helps**: 8s window (val 15.86) > 4s (17.01) > 2s (17.61). BiLSTM benefits from longer sequences because it can model more keystroke context per forward pass.
