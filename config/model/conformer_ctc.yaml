@@ -1,0 +1,15 @@
+# @package _global_
+module:
+  _target_: emg2qwerty.lightning.ConformerCTCModule
+  in_features: 528
+  mlp_features: [384]
+  num_heads: 8        # 768 / 8 = 96 per head
+  ffn_dim: 1024
+  num_layers: 2
+  depthwise_conv_kernel_size: 31  # ~248ms at 125Hz, must be odd
+  dropout: 0.1
+
+datamodule:
+  _target_: emg2qwerty.lightning.WindowedEMGDataModule
+  window_length: 8000
+  padding: [1800, 200]

@@ -312,3 +312,31 @@ class LSTMEncoder(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x, _ = self.lstm(inputs)  # (T, N, hidden_size * 2)
         return self.fc(x)         # (T, N, num_features)
+
+
+class ConvBlock(nn.Module):
+    """Depthwise + pointwise conv block with pre-norm and residual.
+
+    Captures local temporal patterns with a wide depthwise conv (per-channel)
+    followed by a pointwise conv (cross-channel mixing). Operates on TNC tensors.
+    """
+
+    def __init__(self, num_features: int, kernel_size: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(num_features)
+        self.dw_conv = nn.Conv1d(
+            num_features, num_features, kernel_size,
+            padding=kernel_size // 2, groups=num_features,
+        )
+        self.pw_conv = nn.Conv1d(num_features, num_features, 1)
+        self.act = nn.GELU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (T, N, C)
+        residual = x
+        x = self.norm(x)
+        x = x.permute(1, 2, 0)        # (N, C, T)
+        x = self.act(self.dw_conv(x))
+        x = self.pw_conv(x)
+        x = x.permute(2, 0, 1)        # (T, N, C)
+        return x + residual
