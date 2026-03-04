@@ -28,4 +28,8 @@ run_if_not_done "win4000_pad3600" win4000_pad3600.log   datamodule.window_length
 run_if_not_done "win16000_pad900" win16000_pad900.log   datamodule.window_length=16000 "datamodule.padding=[900,100]"
 run_if_not_done "win16000_pad3600" win16000_pad3600.log datamodule.window_length=16000 "datamodule.padding=[3600,400]"
 
+run_if_not_done "win16000_pad900_150ep" win16000_pad900_150ep.log \
+    datamodule.window_length=16000 "datamodule.padding=[900,100]" \
+    trainer.max_epochs=150
+
 echo "$(date): All done!" >> "$LOG"
