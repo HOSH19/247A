@@ -14,7 +14,7 @@ MLP and CTC decoder kept identical to TDSConv baseline. Only the encoder and pre
 
 ## Part 1: Architecture Experiments
 
-Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation.
+Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 
 ### Full Results Table
 
@@ -25,13 +25,17 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation.
 | BiLSTM (h=384, l=2) | 8.2M | 19.87 | 20.08 | 40 | |
 | BiLSTM (h=384, l=3) | 11.7M | 20.87 | 24.08 | 40 | |
 | BiLSTM (h=512, l=2) | 12.8M | 19.74 | 19.69 | 40 | |
-| BiLSTM (h=512, l=3) | 19.1M | **17.88** | 21.55 | 40 | |
-| TDS+BiLSTM hybrid | 13.0M | — | — | 40 | (no 40ep run) |
+| BiLSTM (h=512, l=3) | 19.1M | 17.88 | 21.55 | 40 | |
 | BiLSTM + Transformer | 22.3M | 19.03 | 26.56 | 40 | screening |
-| BiLSTM (h=384, l=2) | 8.2M | **14.55** | **15.76** | 150 | logs/2026-02-28/00-52-40 |
+| Conformer | 15.1M | 30.77 | 26.78 | 40 | screening |
+| ConvLSTMConv (k=31) | 9.4M | 17.68 | 19.19 | 40 | hop=16 |
+| TDS+BiLSTM hybrid | 13.0M | — | — | 40 | (no 40ep run) |
+| BiLSTM (h=384, l=2) | 8.2M | **14.55** | 15.76 | 150 | logs/2026-02-28/00-52-40 |
 | BiLSTM (h=512, l=3) | 19.1M | 15.91 | 22.80 | 150 | best ep135 |
 | TDS+BiLSTM hybrid | 13.0M | 14.58 | 15.47 | 150 | warm init from TDSConv ep38 |
 | BiLSTM + Transformer | 22.3M | 14.67 | 17.25 | 150 | best ep129 |
+| BiLSTM hop=48 | 8.2M | 13.98 | **14.52** | 150 | best preprocessing |
+| ConvLSTMConv hop=48 | 9.4M | 14.49 | 17.53 | 150 | best ep110 |
 
 ---
 
@@ -108,11 +112,53 @@ Consistent with Exp 3: the data regime limits what any architectural addition ca
 
 ---
 
+### Experiment 5: Conformer
+
+**Motivation:** The Conformer (Gulati et al., 2020) combines self-attention and depthwise convolution in a sandwich structure (FFN → MHSA → DepthwiseConv → FFN), achieving state-of-the-art on speech recognition tasks. The combination of local (conv) and global (attention) context modeling seems well-suited for EMG sequences.
+
+**Architecture:**
+```
+Flatten → torchaudio.Conformer(input_dim=768, num_heads=8, ffn_dim=1024, num_layers=2, kernel=31) → Linear
+```
+Config tuned to 15.1M params (num_layers=2, ffn_dim=1024) to avoid extreme overfitting.
+
+**Screening (40 epochs):** val CER **30.77**, test CER **26.78** — dramatically worse than BiLSTM (19.87/20.08).
+
+**Insight:** Conformer fails badly on this task despite being a strong architecture for speech. The self-attention mechanism requires large amounts of data to learn meaningful cross-timestep relationships — on a single-user dataset with 16 sessions, it simply overfits. The 15.1M parameter count is already limiting, and even at 40 epochs, performance is far below the 8.2M BiLSTM. **Self-attention is the wrong inductive bias for this data regime.**
+
+---
+
+### Experiment 6: Conv → BiLSTM → Conv (ConvLSTMConv)
+
+**Motivation:** Inspired by the Conformer's sandwich structure (Conv-Attention-Conv), replace self-attention with BiLSTM. Depthwise conv blocks on both sides of the BiLSTM could capture local temporal patterns (~248ms window) that complement the BiLSTM's global context modeling — without the data-hungry attention mechanism.
+
+**Architecture:**
+```
+Flatten → ConvBlock(k=31) → LSTMEncoder(h=384, l=2) → ConvBlock(k=31) → Linear
+```
+ConvBlock: LayerNorm → DepthwiseConv1d(k=31, groups=C) → GELU → PointwiseConv1d(1×1) → residual
+
+**Parameter breakdown (9.4M total):**
+| Component | Params |
+|---|---|
+| Pre-ConvBlock | 0.617M |
+| LSTMEncoder (h=384, l=2) | 7.681M |
+| Post-ConvBlock | 0.617M |
+| Classifier | 0.045M |
+
+**Screening @ hop=16 (40 epochs):** val CER **17.68**, test CER **19.19** — noticeably better than pure BiLSTM at 40ep (19.87/20.08) with only 1.2M extra params.
+
+**Full run @ hop=48 (150 epochs):** val CER **14.49**, test CER **17.53** — val matches BiLSTM hop=16 (14.55) but test CER is significantly worse (17.53 vs 14.52 for BiLSTM hop=48).
+
+**Insight:** ConvLSTMConv converges faster than BiLSTM (promising 40ep result) but overfits at convergence — the additional 1.2M conv parameters are enough to tip the balance on this small dataset. The conv blocks appear redundant: BiLSTM already learns local temporal structure through its recurrent connections (same conclusion as Exp 2). Each architectural addition that increases parameter count hurts generalization in this data-limited regime.
+
+---
+
 ## Part 2: Preprocessing Ablation
 
 Fixed: BiLSTM h=384, l=2 (8.2M), 16ch, 16 sessions.
 
-### Experiment 5: Sampling Rate (hop_length)
+### Experiment 7: Sampling Rate (hop_length)
 
 **Motivation:** The baseline uses `hop_length=16`, downsampling the 2kHz EMG signal to 125 spectrogram frames/sec. This choice was inherited from the original codebase without ablation. Higher temporal resolution preserves more detail but creates longer sequences; lower resolution may discard useful information but could be easier for BiLSTM to model. Worth exploring whether 125Hz is actually optimal.
 
@@ -144,7 +190,7 @@ hop=8 (250Hz) is clearly worst: longest sequences + most noise. The sweet spot i
 
 ---
 
-### Experiment 6: Data Augmentation
+### Experiment 8: Data Augmentation
 
 **Motivation:** With only 16 training sessions for one user, overfitting is a real concern. Standard augmentation techniques may improve generalization by diversifying training examples. The baseline already uses RandomBandRotation, TemporalAlignmentJitter, and SpecAugment — but these are EMG-specific. Testing whether general signal augmentations (noise, amplitude variation) provide additional benefit.
 
@@ -166,7 +212,7 @@ hop=8 (250Hz) is clearly worst: longest sequences + most noise. The sweet spot i
 
 Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
-### Experiment 7: Electrode Channel Ablation
+### Experiment 9: Electrode Channel Ablation
 
 **Motivation:** The device uses 16 electrode channels per band (32 total). Fewer channels = simpler, cheaper hardware. Understanding how many channels are actually necessary could inform future hardware design. Hypothesis: nearby electrodes may capture redundant signals, so some reduction should be tolerable.
 
@@ -184,7 +230,7 @@ Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
 ---
 
-### Experiment 8: Training Data Amount
+### Experiment 10: Training Data Amount
 
 **Motivation:** The single-user dataset has 16 training sessions (collected across multiple days). Collecting many sessions is expensive and time-consuming — if the model works well with fewer sessions, data collection burden is reduced. Also directly tests the data-bottleneck hypothesis: if less data dramatically hurts performance, then architecture improvements are fundamentally limited by data size.
 
@@ -207,11 +253,13 @@ Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
 | File | Description |
 |------|-------------|
-| `emg2qwerty/modules.py` | `LSTMEncoder`, `ChannelSlice` classes |
-| `emg2qwerty/lightning.py` | `LSTMCTCModule`, `LSTMTransformerCTCModule` |
+| `emg2qwerty/modules.py` | `LSTMEncoder`, `ChannelSlice`, `ConvBlock` classes |
+| `emg2qwerty/lightning.py` | `LSTMCTCModule`, `LSTMTransformerCTCModule`, `ConformerCTCModule`, `ConvLSTMConvCTCModule` |
 | `emg2qwerty/transforms.py` | `GaussianNoise`, `AmplitudeScale` classes added |
 | `config/model/lstm_ctc.yaml` | BiLSTM config (h=384, l=2) |
 | `config/model/lstm_transformer_ctc.yaml` | BiLSTM + Transformer config |
+| `config/model/conformer_ctc.yaml` | Conformer config (15.1M) |
+| `config/model/conv_lstm_conv_ctc.yaml` | ConvLSTMConv config (9.4M, k=31) |
 | `config/transforms/log_spectrogram_hop*.yaml` | Sampling rate variants (hop 8/16/24/32/40/48/56/64) |
 | `config/user/single_user_*ses.yaml` | Data amount variants (2/4/8 sessions) |
 
@@ -223,6 +271,12 @@ python -m emg2qwerty.train model=lstm_ctc
 
 # BiLSTM with hop=48 (best config)
 python -m emg2qwerty.train model=lstm_ctc transforms=log_spectrogram_hop48
+
+# ConvLSTMConv with hop=48
+python -m emg2qwerty.train model=conv_lstm_conv_ctc transforms=log_spectrogram_hop48
+
+# Conformer (40ep screening)
+python -m emg2qwerty.train model=conformer_ctc trainer.max_epochs=40
 
 # Screening run (40 epochs)
 python -m emg2qwerty.train model=lstm_ctc trainer.max_epochs=40
