@@ -36,6 +36,12 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiLSTM + Transformer | 22.3M | 14.67 | 17.25 | 150 | best ep129 |
 | BiLSTM hop=48 | 8.2M | 13.98 | **14.52** | 150 | best preprocessing |
 | ConvLSTMConv hop=48 | 9.4M | 14.49 | 17.53 | 150 | best ep110 |
+| BiLSTM win=4000 hop=48 | 8.2M | 17.61 | 16.08 | 40 | window ablation |
+| BiLSTM win=16000 hop=48 | 8.2M | 15.86 | 16.19 | 40 | window ablation |
+| BiLSTM pad=[900,100] hop=48 | 8.2M | 15.77 | 16.06 | 40 | padding ablation |
+| BiLSTM pad=[3600,400] hop=48 | 8.2M | 17.39 | 17.22 | 40 | padding ablation |
+| BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **15.13** | 16.27 | 40 | best combo |
+| BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | — | — | 150 | in progress |
 
 ---
 
@@ -154,11 +160,52 @@ ConvBlock: LayerNorm → DepthwiseConv1d(k=31, groups=C) → GELU → PointwiseC
 
 ---
 
+### Experiment 7: Window Size and Padding
+
+**Motivation:** The baseline uses `window_length=8000` (4s) with `padding=[1800,200]` (900ms past / 100ms future context), inherited without ablation. Larger windows give BiLSTM more sequence context per forward pass; padding provides extra context beyond the prediction window at boundaries. Both could affect CER.
+
+**Setup:** BiLSTM h=384, l=2, hop=48, 40 epochs, gradient_clip_val=1.0. Baseline window=8000, pad=[1800,200] → val 17.01, test 17.59.
+
+**Window size ablation (pad=[1800,200] fixed):**
+
+| Window | Duration | Frames (hop=48) | Val CER | Test CER |
+|--------|----------|-----------------|---------|----------|
+| 4000 | 2s | ~104 | 17.61 | 16.08 |
+| **8000** | **4s (baseline)** | **~208** | **17.01** | **17.59** |
+| **16000** | **8s** | **~417** | **15.86** | **16.19** |
+
+**Padding ablation (window=8000 fixed):**
+
+| Padding | Past context | Future context | Val CER | Test CER |
+|---------|-------------|----------------|---------|----------|
+| [900, 100] | 450ms | 50ms | **15.77** | **16.06** |
+| **[1800, 200]** | **900ms (baseline)** | **100ms** | **17.01** | **17.59** |
+| [3600, 400] | 1800ms | 200ms | 17.39 | 17.22 |
+
+**Combo experiments:**
+
+| Window | Padding | Val CER | Test CER |
+|--------|---------|---------|----------|
+| 4000 | [3600, 400] | 17.10 | 23.17 |
+| **16000** | **[900, 100]** | **15.13** | **16.27** |
+| 16000 | [3600, 400] | 16.08 | 17.25 |
+
+**Best: win=16000, pad=[900,100] → val 15.13 @ 40ep. Full 150ep run in progress.**
+
+**Insight:**
+- **Larger window consistently helps**: 8s window (val 15.86) > 4s (17.01) > 2s (17.61). BiLSTM benefits from longer sequences because it can model more keystroke context per forward pass.
+- **Smaller padding is better**: pad=[900,100] (val 15.77) beats baseline pad=[1800,200] (17.01). Counterintuitive — extra padding adds noisy boundary context that the model must learn to ignore.
+- **pad=[3600,400] hurts**: Too much padding degrades performance. The model is distracted by context far from the prediction window.
+- **Best combo**: win=16000 + pad=[900,100] → val 15.13, nearly −2 over baseline at 40ep.
+- win=4000 + pad=[3600,400] shows severe test overfitting (23.17) — short window with large padding is the worst combination.
+
+---
+
 ## Part 2: Preprocessing Ablation
 
 Fixed: BiLSTM h=384, l=2 (8.2M), 16ch, 16 sessions.
 
-### Experiment 7: Sampling Rate (hop_length)
+### Experiment 8: Sampling Rate (hop_length)
 
 **Motivation:** The baseline uses `hop_length=16`, downsampling the 2kHz EMG signal to 125 spectrogram frames/sec. This choice was inherited from the original codebase without ablation. Higher temporal resolution preserves more detail but creates longer sequences; lower resolution may discard useful information but could be easier for BiLSTM to model. Worth exploring whether 125Hz is actually optimal.
 
@@ -190,7 +237,7 @@ hop=8 (250Hz) is clearly worst: longest sequences + most noise. The sweet spot i
 
 ---
 
-### Experiment 8: Data Augmentation
+### Experiment 9: Data Augmentation
 
 **Motivation:** With only 16 training sessions for one user, overfitting is a real concern. Standard augmentation techniques may improve generalization by diversifying training examples. The baseline already uses RandomBandRotation, TemporalAlignmentJitter, and SpecAugment — but these are EMG-specific. Testing whether general signal augmentations (noise, amplitude variation) provide additional benefit.
 
@@ -212,7 +259,7 @@ hop=8 (250Hz) is clearly worst: longest sequences + most noise. The sweet spot i
 
 Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
-### Experiment 9: Electrode Channel Ablation
+### Experiment 10: Electrode Channel Ablation
 
 **Motivation:** The device uses 16 electrode channels per band (32 total). Fewer channels = simpler, cheaper hardware. Understanding how many channels are actually necessary could inform future hardware design. Hypothesis: nearby electrodes may capture redundant signals, so some reduction should be tolerable.
 
@@ -230,7 +277,7 @@ Fixed: BiLSTM h=384, l=2 (8.2M), hop=16, 40 epochs.
 
 ---
 
-### Experiment 10: Training Data Amount
+### Experiment 11: Training Data Amount
 
 **Motivation:** The single-user dataset has 16 training sessions (collected across multiple days). Collecting many sessions is expensive and time-consuming — if the model works well with fewer sessions, data collection burden is reduced. Also directly tests the data-bottleneck hypothesis: if less data dramatically hurts performance, then architecture improvements are fundamentally limited by data size.
 
