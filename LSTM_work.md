@@ -42,6 +42,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiLSTM pad=[3600,400] hop=48 | 8.2M | 17.39 | 17.22 | 40 | padding ablation |
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **15.13** | 16.27 | 40 | best combo |
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **13.65** | **14.93** | 150 | best config full run |
+| ConvLSTMConv win=16000 pad=[900,100] hop=48 | 9.4M | **13.56** | **14.93** | 150 | best ep125 |
 
 ---
 
@@ -156,7 +157,9 @@ ConvBlock: LayerNorm → DepthwiseConv1d(k=31, groups=C) → GELU → PointwiseC
 
 **Full run @ hop=48 (150 epochs):** val CER **14.49**, test CER **17.53** — val matches BiLSTM hop=16 (14.55) but test CER is significantly worse (17.53 vs 14.52 for BiLSTM hop=48).
 
-**Insight:** ConvLSTMConv converges faster than BiLSTM (promising 40ep result) but overfits at convergence — the additional 1.2M conv parameters are enough to tip the balance on this small dataset. The conv blocks appear redundant: BiLSTM already learns local temporal structure through its recurrent connections (same conclusion as Exp 2). Each architectural addition that increases parameter count hurts generalization in this data-limited regime.
+**Full run @ hop=48 + win=16000 + pad=[900,100] (150 epochs):** val CER **13.56**, test CER **14.93** — val slightly beats BiLSTM with same config (13.65), test identical (14.93). Overfitting nearly eliminated compared to hop=48 alone (test 17.53 → 14.93).
+
+**Insight:** ConvLSTMConv with the default window/padding overfits badly (test 17.53). With win=16000 + pad=[900,100], the longer sequences provide enough context to prevent overfitting — test CER matches BiLSTM exactly. The conv blocks give a slight val edge (13.56 vs 13.65) but no test improvement over pure BiLSTM. Same conclusion as before: extra parameters don't help generalization on this small dataset, but the architecture is no longer harmful when window/padding are properly tuned.
 
 ---
 
