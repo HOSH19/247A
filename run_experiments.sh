@@ -40,4 +40,7 @@ run_if_not_done "gru_best" gru_best.log \
     model=gru_ctc datamodule.window_length=16000 "datamodule.padding=[900,100]" \
     trainer.max_epochs=150
 
+run_if_not_done "conv_gru_conv_best" conv_gru_conv_best.log \
+    model=conv_gru_conv_ctc trainer.max_epochs=150
+
 echo "$(date): All done!" >> "$LOG"
