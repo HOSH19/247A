@@ -43,6 +43,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **15.13** | 16.27 | 40 | best combo |
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **13.65** | **14.93** | 150 | best config full run |
 | ConvLSTMConv win=16000 pad=[900,100] hop=48 | 9.4M | **13.56** | **14.93** | 150 | best ep125 |
+| BiGRU win=16000 pad=[900,100] hop=48 | 6.4M | **13.49** | **14.11** | 150 | best test so far |
 
 ---
 
@@ -201,6 +202,32 @@ ConvBlock: LayerNorm → DepthwiseConv1d(k=31, groups=C) → GELU → PointwiseC
 - **pad=[3600,400] hurts**: Too much padding degrades performance. The model is distracted by context far from the prediction window.
 - **Best combo**: win=16000 + pad=[900,100] → val 15.13, nearly −2 over baseline at 40ep.
 - win=4000 + pad=[3600,400] shows severe test overfitting (23.17) — short window with large padding is the worst combination.
+
+---
+
+---
+
+### Experiment 8: BiGRU vs BiLSTM
+
+**Motivation:** GRU uses 3 gates (reset, update, new) vs LSTM's 4 (input, forget, cell, output), giving ~25% fewer parameters at the same hidden size. GRU is often faster to train and less prone to overfitting on small datasets. Worth comparing directly against BiLSTM under identical conditions.
+
+**Architecture:**
+```
+Flatten → GRUEncoder(h=384, l=2) → Linear
+```
+GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
+
+**Parameter comparison:**
+| Model | Params |
+|-------|--------|
+| BiLSTM (h=384, l=2) | 8.2M |
+| BiGRU (h=384, l=2) | 6.4M |
+
+**Screening @ hop=48 (40 epochs):** val CER **15.06**, test CER **16.56**
+
+**Full run @ hop=48 + win=16000 + pad=[900,100] (150 epochs):** val CER **13.49**, test CER **14.11** — **best test CER overall.**
+
+**Insight:** BiGRU outperforms BiLSTM on test CER (14.11 vs 14.52 for BiLSTM hop=48) with 1.8M fewer parameters. The reduced parameter count actually helps generalization on this small dataset — consistent with the recurring data-bottleneck finding. GRU's simpler gating (no separate cell state) is sufficient for EMG sequence modeling.
 
 ---
 
