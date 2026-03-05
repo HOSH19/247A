@@ -32,4 +32,12 @@ run_if_not_done "win16000_pad900_150ep" win16000_pad900_150ep.log \
     datamodule.window_length=16000 "datamodule.padding=[900,100]" \
     trainer.max_epochs=150
 
+# GRU experiments
+run_if_not_done "gru_screening" gru_screening.log \
+    model=gru_ctc
+
+run_if_not_done "gru_best" gru_best.log \
+    model=gru_ctc datamodule.window_length=16000 "datamodule.padding=[900,100]" \
+    trainer.max_epochs=150
+
 echo "$(date): All done!" >> "$LOG"

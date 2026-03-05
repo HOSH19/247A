@@ -314,6 +314,24 @@ class LSTMEncoder(nn.Module):
         return self.fc(x)         # (T, N, num_features)
 
 
+class GRUEncoder(nn.Module):
+    def __init__(self, num_features, hidden_size, num_layers, dropout):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=num_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bidirectional=True,
+            dropout=dropout,
+            batch_first=False,  # TNC format
+        )
+        self.fc = nn.Linear(hidden_size * 2, num_features)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        x, _ = self.gru(inputs)  # (T, N, hidden_size * 2)
+        return self.fc(x)        # (T, N, num_features)
+
+
 class ConvBlock(nn.Module):
     """Depthwise + pointwise conv block with pre-norm and residual.
 
