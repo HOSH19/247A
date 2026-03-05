@@ -44,6 +44,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiLSTM win=16000 pad=[900,100] hop=48 | 8.2M | **13.65** | **14.93** | 150 | best config full run |
 | ConvLSTMConv win=16000 pad=[900,100] hop=48 | 9.4M | **13.56** | **14.93** | 150 | best ep125 |
 | BiGRU win=16000 pad=[900,100] hop=48 | 6.4M | **13.49** | **14.11** | 150 | best test so far |
+| ConvGRUConv win=16000 pad=[900,100] hop=48 | 7.6M | 13.98 | 15.06 | 150 | conv blocks hurt |
 
 ---
 
@@ -227,7 +228,9 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 
 **Full run @ hop=48 + win=16000 + pad=[900,100] (150 epochs):** val CER **13.49**, test CER **14.11** — **best test CER overall.**
 
-**Insight:** BiGRU outperforms BiLSTM on test CER (14.11 vs 14.52 for BiLSTM hop=48) with 1.8M fewer parameters. The reduced parameter count actually helps generalization on this small dataset — consistent with the recurring data-bottleneck finding. GRU's simpler gating (no separate cell state) is sufficient for EMG sequence modeling.
+**ConvGRUConv full run @ same config (150 epochs):** val CER **13.98**, test CER **15.06** — worse than pure BiGRU on both metrics.
+
+**Insight:** BiGRU outperforms BiLSTM on test CER (14.11 vs 14.52) with 1.8M fewer parameters. The reduced parameter count actually helps generalization on this small dataset — consistent with the recurring data-bottleneck finding. GRU's simpler gating (no separate cell state) is sufficient for EMG sequence modeling. ConvGRUConv follows the same pattern as ConvLSTMConv: conv blocks add parameters without improving test CER, confirming that the recurrent encoder already captures local temporal structure.
 
 ---
 
