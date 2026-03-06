@@ -45,7 +45,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | ConvLSTMConv win=16000 pad=[900,100] hop=48 | 9.4M | **13.56** | **14.93** | 150 | best ep125 |
 | BiGRU win=16000 pad=[900,100] hop=48 | 6.4M | **13.49** | **14.11** | 150 | best test so far |
 | ConvGRUConv win=16000 pad=[900,100] hop=48 | 7.6M | 13.98 | 15.06 | 150 | conv blocks hurt |
-| BiGRU AdamW win=16000 pad=[900,100] hop=48 | 6.4M | 13.36 | 15.32 | 150 | val 개선, test 악화 |
+| BiGRU AdamW win=16000 pad=[900,100] hop=48 | 6.4M | 13.36 | 15.32 | 150 | val improves, test worse |
 | BiGRU dropout=0.5 win=16000 pad=[900,100] hop=48 | 6.4M | **13.03** | **13.59** | 150 | best greedy so far |
 | BiGRU + CTC Beam Search (beam=50, LM), dropout=0.1 | 6.4M | 8.46 | 8.69 | — | beam search on BiGRU best ckpt |
 | **BiGRU + CTC Beam Search (beam=50, LM), dropout=0.5** | **6.4M** | **8.82** | **8.17** | — | **best overall** |
@@ -238,7 +238,31 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 
 ---
 
-### Experiment 9 (Decoder): CTC Beam Search with Character LM
+### Experiment 9 (Optimization): Optimizer and Learning Rate Ablation
+
+**Motivation:** The baseline uses Adam with lr=1e-3, inherited without ablation. Different optimizers and learning rates may converge to better minima or generalize better on this small dataset.
+
+**Setup:** BiGRU best config (win=16000, pad=[900,100], hop=48, gradient_clip=1.0). Screening at 40 epochs. Baseline (BiGRU Adam lr=1e-3, win=8000): val ~15.06, test ~16.56.
+
+**Screening (40 epochs):**
+
+| Config | Val CER | Test CER |
+|--------|---------|----------|
+| Adam lr=3e-4 | 19.05 | 20.53 |
+| Adam lr=5e-4 | 15.51 | 17.03 |
+| **Adam lr=1e-3 (baseline)** | **~15.13** | **~16.27** |
+| Adam + CosineAnnealing | 17.43 | 29.24 |
+| Adam + WarmupCosine (warmup=10ep) | 15.49 | 15.02 |
+| **AdamW lr=1e-3 (wd=0.01)** | **14.36** | **15.11** |
+| AdamW + CosineAnnealing | 18.25 | 29.63 |
+
+**Full run (150 epochs, AdamW):** val CER **13.36**, test CER **15.32** — val improves over Adam (13.49) but test is worse (15.32 vs 14.11).
+
+**Insight:** AdamW is best at 40ep (val 14.36) but fails to generalize at 150ep (test 15.32 vs Adam 14.11). CosineAnnealing causes test CER explosion at 40ep — lr decays too aggressively by ep40 on this small dataset, causing underfitting. Lower lr (3e-4) converges too slowly. Adam lr=1e-3 remains the best optimizer for this task. Adam + WarmupCosine shows the best test CER at 40ep (15.02), suggesting warmup may help stability, but was not explored further.
+
+---
+
+### Experiment 10 (Decoder): CTC Beam Search with Character LM
 
 **Motivation:** The baseline decoding is CTC greedy (argmax at each timestep, then collapse). CTC beam search maintains multiple hypotheses and rescores them with an n-gram language model, which can significantly improve CER by leveraging prior knowledge of character sequences.
 
@@ -264,7 +288,7 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 
 ---
 
-### Experiment 10 (Regularization): Dropout Ablation
+### Experiment 11 (Regularization): Dropout Ablation
 
 **Motivation:** The default dropout=0.1 was inherited without ablation. Given the recurring data-bottleneck finding (small dataset, overfitting tendency), stronger dropout regularization may improve generalization.
 
@@ -275,12 +299,14 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 | dropout | Val CER | Test CER |
 |---------|---------|----------|
 | 0.0 | 14.93 | 15.32 |
-| **0.1 (baseline)** | **~15.06** | **~16.56** |
+| 0.1 | 15.37 | 15.60 |
 | 0.2 | 14.53 | 15.97 |
 | 0.3 | 14.51 | 15.86 |
 | **0.5** | **14.33** | **14.87** |
+| 0.6 | 14.38 | 14.65 |
+| 0.7 | 14.98 | 15.54 |
 
-Monotonically improving trend with higher dropout at 40ep — dropout=0.5 clearly best.
+Non-monotonic pattern. dropout=0.5 is best on val (14.33); dropout=0.6 is marginally better on test (14.65 vs 14.87) but the difference is small. Performance degrades sharply at dropout=0.7. **dropout=0.5 confirmed as optimal.**
 
 **Full run (150 epochs, dropout=0.5):** val CER **13.03**, test CER **13.59** — new best greedy CER.
 
