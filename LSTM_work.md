@@ -45,6 +45,8 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | ConvLSTMConv win=16000 pad=[900,100] hop=48 | 9.4M | **13.56** | **14.93** | 150 | best ep125 |
 | BiGRU win=16000 pad=[900,100] hop=48 | 6.4M | **13.49** | **14.11** | 150 | best test so far |
 | ConvGRUConv win=16000 pad=[900,100] hop=48 | 7.6M | 13.98 | 15.06 | 150 | conv blocks hurt |
+| BiGRU AdamW win=16000 pad=[900,100] hop=48 | 6.4M | 13.36 | 15.32 | 150 | val 개선, test 악화 |
+| BiGRU + CTC Beam Search (beam=50, LM) | 6.4M | **8.46** | **8.69** | — | beam search on BiGRU best ckpt |
 
 ---
 
@@ -231,6 +233,32 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 **ConvGRUConv full run @ same config (150 epochs):** val CER **13.98**, test CER **15.06** — worse than pure BiGRU on both metrics.
 
 **Insight:** BiGRU outperforms BiLSTM on test CER (14.11 vs 14.52) with 1.8M fewer parameters. The reduced parameter count actually helps generalization on this small dataset — consistent with the recurring data-bottleneck finding. GRU's simpler gating (no separate cell state) is sufficient for EMG sequence modeling. ConvGRUConv follows the same pattern as ConvLSTMConv: conv blocks add parameters without improving test CER, confirming that the recurrent encoder already captures local temporal structure.
+
+---
+
+### Experiment 9 (Decoder): CTC Beam Search with Character LM
+
+**Motivation:** The baseline decoding is CTC greedy (argmax at each timestep, then collapse). CTC beam search maintains multiple hypotheses and rescores them with an n-gram language model, which can significantly improve CER by leveraging prior knowledge of character sequences.
+
+**Setup:** Applied beam search to the BiGRU best checkpoint (ep136, val 13.49, test 14.11). Used the pre-existing `CTCBeamDecoder` implementation with `config/decoder/ctc_beam.yaml`:
+- `beam_size=50`
+- `wikitext-103-6gram-charlm.bin` (character-level 6-gram LM)
+- `lm_weight=2.0`, `insertion_bonus=2.0`
+
+**Result:**
+
+| Decoder | Val CER | Test CER | Inference time (val+test) |
+|---------|---------|----------|--------------------------|
+| Greedy | 13.49 | 14.11 | ~1min |
+| Beam Search (beam=10) | 9.30 | 8.90 | ~3min |
+| Beam Search (beam=25) | 8.75 | 8.88 | ~6min |
+| **Beam Search (beam=50)** | **8.46** | **8.69** | ~15min |
+| Beam Search (beam=75) | 8.40 | 8.84 | ~21min |
+| Beam Search (beam=100) | 8.40 | 8.77 | ~30min |
+
+**Improvement (beam=50): −5.03 val CER, −5.42 test CER (−38% relative).**
+
+**Insight:** The LM-guided beam search provides a massive improvement. The character LM effectively constrains the output to plausible English character sequences, correcting many greedy decoding errors where individual frame probabilities are uncertain. Val CER plateaus at beam=75 (8.40); test CER continues to marginally improve up to beam=100 (8.77) but with diminishing returns. **beam=50 is the best speed/accuracy tradeoff.** This decoder was already implemented in the baseline codebase — no architectural changes needed.
 
 ---
 
