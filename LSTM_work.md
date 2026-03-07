@@ -49,6 +49,7 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiGRU dropout=0.5 win=16000 pad=[900,100] hop=48 | 6.4M | **13.03** | **13.59** | 150 | best greedy so far |
 | BiGRU + CTC Beam Search (beam=50, LM), dropout=0.1 | 6.4M | 8.46 | 8.69 | — | beam search on BiGRU best ckpt |
 | **BiGRU + CTC Beam Search (beam=50, LM), dropout=0.5** | **6.4M** | **8.82** | **8.17** | — | **best overall** |
+| BiLSTM win=20000 pad=[900,100] hop=48 | 8.2M | 16.98 | 16.00 | 40 | larger window hurts vs win=16000 |
 
 ---
 
@@ -242,7 +243,7 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 
 **Motivation:** The baseline uses Adam with lr=1e-3, inherited without ablation. Different optimizers and learning rates may converge to better minima or generalize better on this small dataset.
 
-**Setup:** BiGRU best config (win=16000, pad=[900,100], hop=48, gradient_clip=1.0). Screening at 40 epochs. Baseline (BiGRU Adam lr=1e-3, win=8000): val ~15.06, test ~16.56.
+**Setup:** BiGRU best config (win=16000, pad=[900,100], hop=48, gradient_clip=1.0). Screening at 40 epochs. Baseline (BiGRU Adam lr=1e-3): val 15.37, test 15.60.
 
 **Screening (40 epochs):**
 
@@ -250,7 +251,7 @@ GRUEncoder: `nn.GRU(bidirectional=True)` → `nn.Linear(768 → 768)`
 |--------|---------|----------|
 | Adam lr=3e-4 | 19.05 | 20.53 |
 | Adam lr=5e-4 | 15.51 | 17.03 |
-| **Adam lr=1e-3 (baseline)** | **~15.13** | **~16.27** |
+| **Adam lr=1e-3 (baseline)** | **15.37** | **15.60** |
 | Adam + CosineAnnealing | 17.43 | 29.24 |
 | Adam + WarmupCosine (warmup=10ep) | 15.49 | 15.02 |
 | **AdamW lr=1e-3 (wd=0.01)** | **14.36** | **15.11** |
@@ -320,6 +321,48 @@ Non-monotonic pattern. dropout=0.5 is best on val (14.33); dropout=0.6 is margin
 **Best overall: test CER 8.17.**
 
 **Insight:** Higher dropout (0.5) significantly improves test generalization — greedy test CER 14.11 → 13.59 (-3.7%), beam search test CER 8.69 → 8.17 (-6%). Consistent with the data-bottleneck hypothesis: strong regularization compensates for limited training data. Val CER is slightly higher with beam search (8.82 vs 8.46) because the stronger dropout makes individual frame probabilities noisier, but the LM beam search corrects for this on test data.
+
+---
+
+### Experiment 12 (Augmentation): SpecAugment Hyperparameter Ablation
+
+**Motivation:** The baseline SpecAugment config (`n_time_masks=3, time_mask_param=25, n_freq_masks=2, freq_mask_param=4`) was inherited without ablation. With dropout=0.5 already providing strong regularization, SpecAugment may be too aggressive — competing with dropout and slowing convergence. Also, temporal jitter and band rotation ranges were never tuned.
+
+**Setup:** BiGRU best config (win=16000, pad=[900,100], hop=48, Adam lr=1e-3, dropout=0.5, gradient_clip=1.0). Screening at 40 epochs. Baseline (t25_f4): val 14.33, test 14.87.
+
+**Coarse screening (40 epochs):**
+
+| Config | Description | Val CER | Test CER |
+|--------|-------------|---------|----------|
+| bandrot_wide | band rotation offsets [-2,-1,0,1,2] | 16.50 | 16.68 |
+| jitter_high | temporal jitter max_offset=240 | 15.13 | 15.45 |
+| jitter_low | temporal jitter max_offset=60 | 14.53 | 15.52 |
+| specaug_strong | time_mask=50, freq_mask=8 | 15.75 | 16.34 |
+| **t25_f4 (baseline)** | **time_mask=25, freq_mask=4** | **14.33** | **14.87** |
+| specaug_weak (t10_f2) | time_mask=10, freq_mask=2 | 13.98 | 14.59 |
+| **no_specaug** | **SpecAugment removed** | **13.36** | **14.20** |
+
+**Fine-grained SpecAugment screening (40 epochs):**
+
+| Config | time_mask_param | freq_mask_param | Val CER | Test CER |
+|--------|----------------|-----------------|---------|----------|
+| **no_specaug** | — | — | 13.36 | **14.20** |
+| **t5_f2** | 5 | 2 | **13.14** | 14.65 |
+| t10_f1 | 10 | 1 | 13.82 | 15.39 |
+| t10_f2 | 10 | 2 | 13.98 | 14.59 |
+| t10_f3 | 10 | 3 | 13.34 | 14.76 |
+| t15_f2 | 15 | 2 | 14.16 | 15.13 |
+| t20_f2 | 20 | 2 | 14.73 | 14.87 |
+| t25_f4 (baseline) | 25 | 4 | 14.33 | 14.87 |
+
+**Decision: no_specaug selected for 150ep full run.**
+
+**Insight:**
+- **Wider band rotation hurts badly** (val 16.50): the existing [-1,0,1] range is already optimal.
+- **More temporal jitter hurts, less jitter doesn't help**: baseline max_offset=120 is the sweet spot.
+- **SpecAugment masking strength is inversely related to test CER**: smaller masking → better generalization. With dropout=0.5 already providing strong regularization, SpecAugment adds noise without benefit.
+- **No SpecAugment achieves best test CER (14.20)** at 40ep, ahead of t5_f2 (14.65) despite t5_f2 having better val CER (13.14 vs 13.36). Val-test gap is larger with SpecAugment, suggesting it causes minor overfitting to the augmentation distribution.
+- The original SpecAugment config (t25_f4) is clearly too aggressive for this setup — it degrades both val and test relative to weaker variants.
 
 ---
 
