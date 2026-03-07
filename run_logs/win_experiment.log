@@ -1,0 +1,113 @@
+Wed Mar  4 17:36:48 UTC 2026: Starting win4000
+win4000 done
+Wed Mar  4 17:58:12 UTC 2026: Starting win16000
+win16000 done
+Wed Mar  4 18:14:41 UTC 2026: Starting pad900
+pad900 done
+Wed Mar  4 18:30:26 UTC 2026: Starting pad3600
+pad3600 done
+Wed Mar  4 18:50:45 UTC 2026: Starting win4000_pad3600
+win4000_pad3600 done
+Wed Mar  4 19:17:11 UTC 2026: Starting win16000_pad900
+Wed Mar  4 19:50:16 UTC 2026: Skipping win4000 (already done)
+Wed Mar  4 19:50:16 UTC 2026: Skipping win16000 (already done)
+Wed Mar  4 19:50:16 UTC 2026: Skipping pad900 (already done)
+Wed Mar  4 19:50:16 UTC 2026: Skipping pad3600 (already done)
+Wed Mar  4 19:50:16 UTC 2026: Skipping win4000_pad3600 (already done)
+Wed Mar  4 19:50:16 UTC 2026: Starting win16000_pad900
+win16000_pad900 done
+Wed Mar  4 20:06:26 UTC 2026: Starting win16000_pad3600
+win16000_pad3600 done
+Wed Mar  4 20:23:42 UTC 2026: All done!
+Wed Mar  4 21:01:57 UTC 2026: Skipping win4000 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping win16000 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping pad900 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping pad3600 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping win4000_pad3600 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping win16000_pad900 (already done)
+Wed Mar  4 21:01:57 UTC 2026: Skipping win16000_pad3600 (already done)
+Wed Mar  4 21:01:57 UTC 2026: All done!
+Wed Mar  4 21:59:03 UTC 2026: Skipping win4000 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping win16000 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping pad900 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping pad3600 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping win4000_pad3600 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping win16000_pad900 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Skipping win16000_pad3600 (already done)
+Wed Mar  4 21:59:03 UTC 2026: Starting win16000_pad900_150ep
+win16000_pad900_150ep done
+Wed Mar  4 22:57:23 UTC 2026: All done!
+Thu Mar  5 17:33:38 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 17:33:38 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 17:33:38 UTC 2026: All done!
+Thu Mar  5 18:34:25 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 18:34:25 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 18:34:25 UTC 2026: All done!
+Thu Mar  5 18:36:30 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 18:36:30 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 18:36:30 UTC 2026: Starting gru_best
+Thu Mar  5 18:37:23 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 18:37:23 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 18:37:23 UTC 2026: Starting gru_screening
+Thu Mar  5 18:43:24 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 18:43:24 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 18:43:24 UTC 2026: Starting gru_screening
+gru_screening done
+Thu Mar  5 19:00:52 UTC 2026: Starting gru_best
+gru_best done
+Thu Mar  5 19:54:05 UTC 2026: All done!
+Thu Mar  5 20:01:58 UTC 2026: Skipping win4000 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping win16000 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping pad900 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping pad3600 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping win4000_pad3600 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping win16000_pad900 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping win16000_pad3600 (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping gru_screening (already done)
+Thu Mar  5 20:01:58 UTC 2026: Skipping gru_best (already done)
+Thu Mar  5 20:01:58 UTC 2026: Starting conv_gru_conv_best
+conv_gru_conv_best done
+Thu Mar  5 21:01:49 UTC 2026: All done!
+Fri Mar  6 20:06:20 UTC 2026: Skipping win4000 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping win16000 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping pad900 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping pad3600 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping win4000_pad3600 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping win16000_pad900 (already done)
+Fri Mar  6 20:06:20 UTC 2026: Skipping win16000_pad3600 (already done)
+Fri Mar  6 20:06:21 UTC 2026: Skipping win16000_pad900_150ep (already done)
+Fri Mar  6 20:06:21 UTC 2026: Skipping gru_screening (already done)
+Fri Mar  6 20:06:21 UTC 2026: Skipping gru_best (already done)
+Fri Mar  6 20:06:21 UTC 2026: Skipping conv_gru_conv_best (already done)
+Fri Mar  6 20:06:21 UTC 2026: All done!

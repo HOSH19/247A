@@ -1,0 +1,5 @@
+LexerNoViableAltException: transforms.train[4].n_time_masks=0
+                                           ^
+See https://hydra.cc/docs/1.2/advanced/override_grammar/basic for details
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
