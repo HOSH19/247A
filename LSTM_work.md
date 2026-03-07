@@ -48,8 +48,10 @@ Fixed: 16ch, 16 sessions, hop=16 (125Hz), standard augmentation (unless noted).
 | BiGRU AdamW win=16000 pad=[900,100] hop=48 | 6.4M | 13.36 | 15.32 | 150 | val improves, test worse |
 | BiGRU dropout=0.5 win=16000 pad=[900,100] hop=48 | 6.4M | **13.03** | **13.59** | 150 | best greedy so far |
 | BiGRU + CTC Beam Search (beam=50, LM), dropout=0.1 | 6.4M | 8.46 | 8.69 | — | beam search on BiGRU best ckpt |
-| **BiGRU + CTC Beam Search (beam=50, LM), dropout=0.5** | **6.4M** | **8.82** | **8.17** | — | **best overall** |
+| BiGRU + CTC Beam Search (beam=50, LM), dropout=0.5 | 6.4M | 8.82 | 8.17 | — | beam search on dropout=0.5 ckpt |
 | BiLSTM win=20000 pad=[900,100] hop=48 | 8.2M | 16.98 | 16.00 | 40 | larger window hurts vs win=16000 |
+| BiGRU dropout=0.5 no_specaug win=16000 pad=[900,100] hop=48 | 6.4M | **11.87** | **11.89** | 150 | new best greedy |
+| **BiGRU + CTC Beam Search (beam=50, LM), dropout=0.5, no_specaug** | **6.4M** | **7.33** | **6.81** | — | **best overall** |
 
 ---
 
@@ -318,7 +320,7 @@ Non-monotonic pattern. dropout=0.5 is best on val (14.33); dropout=0.6 is margin
 | BiGRU dropout=0.1 + beam=50 | 8.46 | 8.69 |
 | **BiGRU dropout=0.5 + beam=50** | **8.82** | **8.17** |
 
-**Best overall: test CER 8.17.**
+**Best at this stage: test CER 8.17.** (superseded by Exp 12 no_specaug run — see below)
 
 **Insight:** Higher dropout (0.5) significantly improves test generalization — greedy test CER 14.11 → 13.59 (-3.7%), beam search test CER 8.69 → 8.17 (-6%). Consistent with the data-bottleneck hypothesis: strong regularization compensates for limited training data. Val CER is slightly higher with beam search (8.82 vs 8.46) because the stronger dropout makes individual frame probabilities noisier, but the LM beam search corrects for this on test data.
 
@@ -357,12 +359,22 @@ Non-monotonic pattern. dropout=0.5 is best on val (14.33); dropout=0.6 is margin
 
 **Decision: no_specaug selected for 150ep full run.**
 
+**Full run (150 epochs, no_specaug, dropout=0.5):** val CER **11.87**, test CER **11.89** — new best greedy CER.
+
+**Beam search on no_specaug checkpoint (beam=50, LM):** val CER **7.33**, test CER **6.81** — **new best overall.**
+
+| Model | Val CER | Test CER |
+|-------|---------|----------|
+| BiGRU dropout=0.5 + specaug (t25_f4) + beam=50 | 8.82 | 8.17 |
+| **BiGRU dropout=0.5 + no_specaug + beam=50** | **7.33** | **6.81** |
+
 **Insight:**
 - **Wider band rotation hurts badly** (val 16.50): the existing [-1,0,1] range is already optimal.
 - **More temporal jitter hurts, less jitter doesn't help**: baseline max_offset=120 is the sweet spot.
 - **SpecAugment masking strength is inversely related to test CER**: smaller masking → better generalization. With dropout=0.5 already providing strong regularization, SpecAugment adds noise without benefit.
 - **No SpecAugment achieves best test CER (14.20)** at 40ep, ahead of t5_f2 (14.65) despite t5_f2 having better val CER (13.14 vs 13.36). Val-test gap is larger with SpecAugment, suggesting it causes minor overfitting to the augmentation distribution.
 - The original SpecAugment config (t25_f4) is clearly too aggressive for this setup — it degrades both val and test relative to weaker variants.
+- **Removing SpecAugment entirely is the single biggest improvement**: greedy 13.59 → 11.89 (-12%), beam 8.17 → 6.81 (-17%). With dropout=0.5 already regularizing effectively, SpecAugment was adding harmful noise.
 
 ---
 
